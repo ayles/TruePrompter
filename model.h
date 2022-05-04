@@ -1,108 +1,98 @@
-// Copyright 2019-2021 Alpha Cephei Inc.
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//       http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+#pragma once
 
-#ifndef VOSK_MODEL_H
-#define VOSK_MODEL_H
+#include <decoder/lattice-incremental-decoder.h>
+#include <hmm/transition-model.h>
+#include <nnet3/am-nnet-simple.h>
+#include <nnet3/decodable-simple-looped.h>
+#include <nnet3/nnet-utils.h>
+#include <online2/online-nnet2-feature-pipeline.h>
+#include <online2/online-endpoint.h>
+#include <fst/fst.h>
 
-#include "base/kaldi-common.h"
-#include "fstext/fstext-lib.h"
-#include "fstext/fstext-utils.h"
-#include "online2/onlinebin-util.h"
-#include "online2/online-timing.h"
-#include "online2/online-endpoint.h"
-#include "online2/online-nnet3-incremental-decoding.h"
-#include "online2/online-feature-pipeline.h"
-#include "lat/lattice-functions.h"
-#include "lat/sausages.h"
-#include "lat/word-align-lattice.h"
-#include "lm/const-arpa-lm.h"
-#include "util/parse-options.h"
-#include "nnet3/nnet-utils.h"
-#include "rnnlm/rnnlm-utils.h"
-#include "rnnlm/rnnlm-lattice-rescoring.h"
-#include <atomic>
+#include <string>
+#include <memory>
+#include <vector>
 
-using namespace kaldi;
-using namespace std;
-
-class Recognizer;
-
-class Model {
-
+class TModel {
 public:
-    Model(const char *model_path);
-    void Ref();
-    void Unref();
-    int FindWord(const char *word);
+    friend class TRecognizer;
 
-protected:
-    ~Model();
-    void ConfigureV1();
-    void ConfigureV2();
-    void ReadDataFiles();
+    TModel(const std::string& path)
+        : TransitionModel_(std::make_unique<kaldi::TransitionModel>())
+        , NNet_(std::make_unique<kaldi::nnet3::AmNnetSimple>())
+    {
+        {
+            bool binary;
+            kaldi::Input ki(path + "/am/final.mdl", &binary);
+            TransitionModel_->Read(ki.Stream(), binary);
+            NNet_->Read(ki.Stream(), binary);
+            SetBatchnormTestMode(true, &NNet_->GetNnet());
+            SetDropoutTestMode(true, &NNet_->GetNnet());
+            kaldi::nnet3::CollapseModel({}, &NNet_->GetNnet());
+        }
 
-    friend class Recognizer;
+        {
+            kaldi::ParseOptions po("");
+            DecodingConfig_.Register(&po);
+            EndpointConfig_.Register(&po);
+            DecodableOpts_.Register(&po);
+            po.ReadConfigFile(path + "/conf/model.conf");
+        }
 
-    string model_path_str_;
-    string nnet3_rxfilename_;
-    string hclg_fst_rxfilename_;
-    string hcl_fst_rxfilename_;
-    string g_fst_rxfilename_;
-    string disambig_rxfilename_;
-    string word_syms_rxfilename_;
-    string phone_syms_rxfilename_;
-    string winfo_rxfilename_;
-    string carpa_rxfilename_;
-    string std_fst_rxfilename_;
-    string final_ie_rxfilename_;
-    string mfcc_conf_rxfilename_;
-    string fbank_conf_rxfilename_;
-    string global_cmvn_stats_rxfilename_;
-    string pitch_conf_rxfilename_;
+        DecodingConfig_.determinize_max_delay = 20;
+        DecodingConfig_.determinize_min_chunk_size = 10;
+        kaldi::ReadConfigFromFile(path + "/conf/mfcc.conf", &FeatureInfo_.mfcc_opts);
+        FeatureInfo_.feature_type = "mfcc";
+        FeatureInfo_.mfcc_opts.frame_opts.allow_downsample = true;
+        FeatureInfo_.silence_weighting_config.silence_weight = 1e-3;
+        FeatureInfo_.silence_weighting_config.silence_phones_str = EndpointConfig_.silence_phones;
 
-    string rnnlm_word_feats_rxfilename_;
-    string rnnlm_feat_embedding_rxfilename_;
-    string rnnlm_config_rxfilename_;
-    string rnnlm_lm_rxfilename_;
+        {
+            kaldi::OnlineIvectorExtractionConfig opts;
+            opts.splice_config_rxfilename = path + "/ivector/splice.conf";
+            opts.cmvn_config_rxfilename = path + "/ivector/online_cmvn.conf";
+            opts.lda_mat_rxfilename = path + "/ivector/final.mat";
+            opts.global_cmvn_stats_rxfilename = path + "/ivector/global_cmvn.stats";
+            opts.diag_ubm_rxfilename = path + "/ivector/final.dubm";
+            opts.ivector_extractor_rxfilename = path + "/ivector/final.ie";
+            opts.max_count = 100;
 
-    kaldi::OnlineEndpointConfig endpoint_config_;
-    kaldi::LatticeIncrementalDecoderConfig nnet3_decoding_config_;
-    kaldi::nnet3::NnetSimpleLoopedComputationOptions decodable_opts_;
-    kaldi::OnlineNnet2FeaturePipelineInfo feature_info_;
+            FeatureInfo_.use_ivectors = true;
+            FeatureInfo_.ivector_extractor_info.Init(opts);
+        }
 
-    kaldi::nnet3::DecodableNnetSimpleLoopedInfo *decodable_info_ = nullptr;
-    kaldi::TransitionModel *trans_model_ = nullptr;
-    kaldi::nnet3::AmNnetSimple *nnet_ = nullptr;
-    const fst::SymbolTable *phone_syms_ = nullptr;
-    const fst::SymbolTable *word_syms_ = nullptr;
-    bool word_syms_loaded_ = false;
-    kaldi::WordBoundaryInfo *winfo_ = nullptr;
-    vector<int32> disambig_;
+        DecodableInfo_ = std::make_unique<kaldi::nnet3::DecodableNnetSimpleLoopedInfo>(DecodableOpts_, NNet_.get());
 
-    fst::Fst<fst::StdArc> *hclg_fst_ = nullptr;
-    fst::Fst<fst::StdArc> *hcl_fst_ = nullptr;
-    fst::Fst<fst::StdArc> *g_fst_ = nullptr;
+        HCL_ = std::unique_ptr<fst::Fst<fst::StdArc>>(fst::StdFst::Read(path + "/graph/HCLr.fst"));
+        G_ = std::unique_ptr<fst::Fst<fst::StdArc>>(fst::StdFst::Read(path + "/graph/Gr.fst"));
+        kaldi::ReadIntegerVectorSimple(path + "/graph/disambig_tid.int", &Disambig_);
 
-    fst::VectorFst<fst::StdArc> *graph_lm_fst_ = nullptr;
-    kaldi::ConstArpaLm const_arpa_;
+        PhoneSyms_ = std::unique_ptr<fst::SymbolTable>(fst::SymbolTable::ReadText(path + "/graph/phones.txt"));
+    }
 
-    kaldi::rnnlm::RnnlmComputeStateComputationOptions rnnlm_compute_opts;
-    CuMatrix<BaseFloat> word_embedding_mat;
-    kaldi::nnet3::Nnet rnnlm;
-    bool rnnlm_enabled_ = false;
+    std::string GetPhoneSym(int32_t index) {
+        return PhoneSyms_->Find(index);
+    }
 
-    std::atomic<int> ref_cnt_;
+    std::string GetWordSym(int32_t index) {
+        return G_->OutputSymbols()->Find(index);
+    }
+
+private:
+    std::unique_ptr<kaldi::TransitionModel> TransitionModel_;
+    std::unique_ptr<kaldi::nnet3::AmNnetSimple> NNet_;
+
+    kaldi::LatticeIncrementalDecoderConfig DecodingConfig_;
+    kaldi::OnlineEndpointConfig EndpointConfig_;
+    kaldi::nnet3::NnetSimpleLoopedComputationOptions DecodableOpts_;
+    kaldi::OnlineNnet2FeaturePipelineInfo FeatureInfo_;
+
+
+    std::unique_ptr<kaldi::nnet3::DecodableNnetSimpleLoopedInfo> DecodableInfo_;
+
+    std::unique_ptr<fst::Fst<fst::StdArc>> HCL_;
+    std::unique_ptr<fst::Fst<fst::StdArc>> G_;
+    std::vector<int32_t> Disambig_;
+
+    std::unique_ptr<fst::SymbolTable> PhoneSyms_;
 };
-
-#endif /* VOSK_MODEL_H */

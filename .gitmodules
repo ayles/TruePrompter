@@ -7,3 +7,6 @@
 [submodule "deps/phonetisaurus"]
 	path = deps/phonetisaurus
 	url = https://github.com/ayles/Phonetisaurus.git
+[submodule "deps/span"]
+	path = deps/span
+	url = https://github.com/tcbrindle/span.git

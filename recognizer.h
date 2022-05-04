@@ -1,104 +1,102 @@
-// Copyright 2019 Alpha Cephei Inc.
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//       http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+#pragma once
 
-#ifndef VOSK_KALDI_RECOGNIZER_H
-#define VOSK_KALDI_RECOGNIZER_H
-
-#include "base/kaldi-common.h"
-#include "util/common-utils.h"
-#include "fstext/fstext-lib.h"
-#include "fstext/fstext-utils.h"
-#include "decoder/lattice-faster-decoder.h"
-#include "feat/feature-mfcc.h"
-#include "lat/kaldi-lattice.h"
-#include "lat/word-align-lattice.h"
-#include "lat/compose-lattice-pruned.h"
-#include "nnet3/am-nnet-simple.h"
-#include "nnet3/nnet-am-decodable-simple.h"
-#include "nnet3/nnet-utils.h"
+#include <lat/phone-align-lattice.h>
+#include <lat/sausages.h>
+#include <online2/online-nnet3-incremental-decoding.h>
 
 #include "model.h"
 
-using namespace kaldi;
+#include <memory>
 
-enum RecognizerState {
-    RECOGNIZER_INITIALIZED,
-    RECOGNIZER_RUNNING,
-    RECOGNIZER_ENDPOINT,
-    RECOGNIZER_FINALIZED
-};
-
-class Recognizer {
+class TRecognizer {
 public:
-    Recognizer(Model *model, float sample_frequency);
-    ~Recognizer();
-    void SetMaxAlternatives(int max_alternatives);
-    void SetWords(bool words);
-    void SetPartialWords(bool partial_words);
-    void SetNLSML(bool nlsml);
-    bool AcceptWaveform(const char *data, int len);
-    bool AcceptWaveform(const short *sdata, int len);
-    bool AcceptWaveform(const float *fdata, int len);
-    bool AcceptWaveform(Vector<BaseFloat> &wdata);
-    const char* Result();
-    const char* FinalResult();
-    const char* PartialResult();
-    void Reset();
+    TRecognizer(std::shared_ptr<TModel> model, float samplingRate)
+        : Model_(std::move(model))
+        , SamplingRate_(samplingRate)
+        , FeaturePipeline_(std::make_unique<kaldi::OnlineNnet2FeaturePipeline>(Model_->FeatureInfo_))
+        , FST_(fst::LookaheadComposeFst(*Model_->HCL_, *Model_->G_, Model_->Disambig_))
+    {
+        Decoder_ = std::make_unique<kaldi::SingleUtteranceNnet3IncrementalDecoder>(
+            Model_->DecodingConfig_,
+            *Model_->TransitionModel_,
+            *Model_->DecodableInfo_,
+            *FST_,
+            FeaturePipeline_.get());
+    }
+
+    bool AcceptWaveform(const float* data, size_t size) {
+        if (!SilenceWeighting_) {
+            SilenceWeighting_ = std::make_unique<kaldi::OnlineSilenceWeighting>(
+                *Model_->TransitionModel_,
+                Model_->FeatureInfo_.silence_weighting_config, 3);
+        }
+
+        size_t chunkSize = SamplingRate_ * 0.2f;
+
+        kaldi::Vector<kaldi::BaseFloat> vec;
+        vec.Resize(chunkSize, kaldi::kUndefined);
+
+        for (size_t i = 0; i < size; i += chunkSize) {
+            size_t currentChunkSize = 0;
+            for ( ; currentChunkSize < chunkSize && i + currentChunkSize < size; ++currentChunkSize) {
+                vec(currentChunkSize) = data[i + currentChunkSize];
+            }
+            vec.Resize(currentChunkSize, kaldi::MatrixResizeType::kCopyData);
+
+            FeaturePipeline_->AcceptWaveform(SamplingRate_, vec);
+
+            if (SilenceWeighting_->Active() && FeaturePipeline_->NumFramesReady() > 0
+                && FeaturePipeline_->IvectorFeature() != nullptr)
+            {
+                std::vector<std::pair<int32_t, kaldi::BaseFloat>> deltaWeights;
+                SilenceWeighting_->ComputeCurrentTraceback(Decoder_->Decoder());
+                SilenceWeighting_->GetDeltaWeights(FeaturePipeline_->NumFramesReady(), FrameOffset_ * 3, &deltaWeights);
+                FeaturePipeline_->UpdateFrameWeights(deltaWeights);
+            }
+
+            Decoder_->AdvanceDecoding();
+        }
+
+        if (Decoder_->EndpointDetected(Model_->EndpointConfig_)) {
+            Decoder_->FinalizeDecoding();
+            FrameOffset_ += Decoder_->NumFramesDecoded();
+            Decoder_->InitDecoding(FrameOffset_);
+            SilenceWeighting_.reset();
+            return true;
+        }
+
+        return false;
+    }
+
+    std::vector<int32_t> GetWords() const {
+        return {};
+    }
+
+    std::vector<int32_t> GetPhones() const {
+        if (!Decoder_->NumFramesInLattice()) {
+            return {};
+        }
+
+        const kaldi::CompactLattice& compactLattice = Decoder_->GetLattice(Decoder_->NumFramesInLattice(), false);
+
+        kaldi::CompactLattice phoneAlignedLattice;
+        kaldi::PhoneAlignLatticeOptions opts;
+        opts.replace_output_symbols = true;
+
+        fst::ScaleLattice(fst::GraphLatticeScale(0.0), &phoneAlignedLattice);
+        kaldi::PhoneAlignLattice(compactLattice, *Model_->TransitionModel_, opts, &phoneAlignedLattice);
+
+        kaldi::MinimumBayesRisk mbr(phoneAlignedLattice);
+        return mbr.GetOneBest();
+    }
 
 private:
-    void InitState();
-    void InitRescoring();
-    void CleanUp();
-    void UpdateSilenceWeights();
-    const char *GetResult();
-    const char *StoreEmptyReturn();
-    const char *StoreReturn(const string &res);
-    const char *MbrResult(CompactLattice &clat);
-    const char *NbestResult(CompactLattice &clat);
-    const char *NlsmlResult(CompactLattice &clat);
+    std::shared_ptr<TModel> Model_;
+    const float SamplingRate_;
 
-    Model *model_ = nullptr;
-    SingleUtteranceNnet3IncrementalDecoder *decoder_ = nullptr;
-    fst::LookaheadFst<fst::StdArc, int32> *decode_fst_ = nullptr;
-    fst::StdVectorFst *g_fst_ = nullptr; // dynamically constructed grammar
-    OnlineNnet2FeaturePipeline *feature_pipeline_ = nullptr;
-    OnlineSilenceWeighting *silence_weighting_ = nullptr;
-
-    // Rescoring
-    fst::ArcMapFst<fst::StdArc, LatticeArc, fst::StdToLatticeMapper<BaseFloat> > *lm_to_subtract_ = nullptr;
-    kaldi::ConstArpaLmDeterministicFst *carpa_to_add_ = nullptr;
-    fst::ScaleDeterministicOnDemandFst *carpa_to_add_scale_ = nullptr;
-    // RNNLM rescoring
-    kaldi::rnnlm::KaldiRnnlmDeterministicFst* rnnlm_to_add_ = nullptr;
-    fst::DeterministicOnDemandFst<fst::StdArc> *rnnlm_to_add_scale_ = nullptr;
-    kaldi::rnnlm::RnnlmComputeStateInfo *rnnlm_info_ = nullptr;
-
-
-    // Other
-    int max_alternatives_ = 0; // Disable alternatives by default
-    bool words_ = false;
-    bool partial_words_ = false;
-    bool nlsml_ = false;
-
-    float sample_frequency_;
-    int32 frame_offset_;
-
-    int64 samples_processed_;
-    int64 samples_round_start_;
-
-    RecognizerState state_;
-    string last_result_;
+    std::unique_ptr<fst::LookaheadFst<fst::StdArc, int32>> FST_;
+    std::unique_ptr<kaldi::OnlineNnet2FeaturePipeline> FeaturePipeline_;
+    std::unique_ptr<kaldi::OnlineSilenceWeighting> SilenceWeighting_;
+    std::unique_ptr<kaldi::SingleUtteranceNnet3IncrementalDecoder> Decoder_;
+    int32_t FrameOffset_ = 0;
 };
-
-#endif /* VOSK_KALDI_RECOGNIZER_H */
