@@ -8,19 +8,32 @@
 #include <online2/online-nnet2-feature-pipeline.h>
 #include <online2/online-endpoint.h>
 #include <fst/fst.h>
+#include <fst/symbol-table.h>
+
+#include <tcb/span.hpp>
 
 #include <string>
 #include <memory>
 #include <vector>
+#include <unordered_map>
+
+namespace NTruePrompter {
+
+class TPhonetizer {
+public:
+    virtual const fst::SymbolTable& GetSymbolTable() const = 0;
+    virtual std::tuple<std::vector<int64_t>, std::vector<std::pair<size_t, float>>> Phoneticize(const tcb::span<const std::string>& words) const = 0;
+    virtual ~TPhonetizer() = default;
+};
 
 class TModel {
 public:
     friend class TRecognizer;
 
     TModel(const std::string& path)
-        : TransitionModel_(std::make_unique<kaldi::TransitionModel>())
-        , NNet_(std::make_unique<kaldi::nnet3::AmNnetSimple>())
-    {
+        : Phonetizer_(MakePhonetizer(path + "/ru.fst"))
+        , TransitionModel_(std::make_unique<kaldi::TransitionModel>())
+        , NNet_(std::make_unique<kaldi::nnet3::AmNnetSimple>()) {
         {
             bool binary;
             kaldi::Input ki(path + "/am/final.mdl", &binary);
@@ -68,17 +81,40 @@ public:
         kaldi::ReadIntegerVectorSimple(path + "/graph/disambig_tid.int", &Disambig_);
 
         PhoneSyms_ = std::unique_ptr<fst::SymbolTable>(fst::SymbolTable::ReadText(path + "/graph/phones.txt"));
+
+        KaldiToPhonetisaurusPhoneMapping_ = MakeKaldiToPhonetisaurusPhoneMapping(*PhoneSyms_, Phonetizer_->GetSymbolTable());
     }
 
-    std::string GetPhoneSym(int32_t index) {
-        return PhoneSyms_->Find(index);
-    }
-
-    std::string GetWordSym(int32_t index) {
-        return G_->OutputSymbols()->Find(index);
+    const TPhonetizer& GetPhonetizer() const {
+        return *Phonetizer_;
     }
 
 private:
+    static std::unique_ptr<TPhonetizer> MakePhonetizer(const std::string& fstPath);
+
+    static std::unordered_map<int64_t, int64_t> MakeKaldiToPhonetisaurusPhoneMapping(const fst::SymbolTable& kaldiSymbols, const fst::SymbolTable& phonetisaurusSymbols) {
+        std::unordered_map<int64_t, int64_t> mapping;
+
+        for (fst::SymbolTableIterator it(kaldiSymbols); !it.Done(); it.Next()) {
+            std::string symbol = it.Symbol();
+            auto underscorePos = symbol.find_first_of('_');
+            if (underscorePos == std::string::npos) {
+                continue;
+            }
+            symbol.resize(underscorePos);
+            auto phonetisaurusPhone = phonetisaurusSymbols.Find(symbol);
+            if (phonetisaurusPhone != fst::kNoSymbol) {
+                mapping[it.Value()] = phonetisaurusPhone;
+            }
+        }
+
+        return mapping;
+    }
+
+private:
+    std::unique_ptr<TPhonetizer> Phonetizer_;
+    std::unordered_map<int64_t, int64_t> KaldiToPhonetisaurusPhoneMapping_;
+
     std::unique_ptr<kaldi::TransitionModel> TransitionModel_;
     std::unique_ptr<kaldi::nnet3::AmNnetSimple> NNet_;
 
@@ -96,3 +132,5 @@ private:
 
     std::unique_ptr<fst::SymbolTable> PhoneSyms_;
 };
+
+}

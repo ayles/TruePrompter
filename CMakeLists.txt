@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.22)
-project(Prompter)
+project(TruePrompter)
 
 set(CMAKE_CXX_STANDARD 17)
 
@@ -15,9 +15,14 @@ elseif ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "AppleClang")
     add_compile_options(-fcolor-diagnostics)
 endif ()
 
-find_package(BLAS REQUIRED)
-
 set(BUILD_SHARED_LIBS OFF CACHE BOOL "Build static")
+
+set(CMAKE_EXPORT_PACKAGE_REGISTRY ON)
+
+find_package(BLAS REQUIRED)
+find_package(OpenSSL REQUIRED)
+find_package(websocketpp REQUIRED)
+find_package(Protobuf REQUIRED)
 
 add_subdirectory(deps/kaldi)
 add_subdirectory(deps/portaudio)
@@ -27,6 +32,5 @@ include(cmake/phonetisaurus.cmake)
 
 target_link_libraries(kaldi-online PUBLIC PortAudio)
 
-add_executable(Prompter main.cpp model.cpp)
-target_include_directories(Prompter PUBLIC ${openfst_SOURCE_DIR}/src/include)
-target_link_libraries(Prompter span PortAudio fst fstngram kaldi-fstext kaldi-nnet3 kaldi-online kaldi-online2 kaldi-rnnlm phonetisaurus)
+add_subdirectory(proto)
+add_subdirectory(src)

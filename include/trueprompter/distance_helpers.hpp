@@ -8,6 +8,8 @@
 #include <array>
 #include <tuple>
 
+namespace NTruePrompter {
+
 template<typename T, typename V>
 using TUnaryCost = std::function<V(const T&)>;
 
@@ -109,4 +111,6 @@ std::vector<std::tuple<ssize_t, ssize_t, V>> SmithWaterman(
     std::reverse(ret.begin(), ret.end());
 
     return ret;
+}
+
 }

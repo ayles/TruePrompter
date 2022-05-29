@@ -1,0 +1,17 @@
+package NTruePrompter;
+
+message TPosition {
+    optional uint64 word_index = 1;
+    optional float word_fraction = 2;
+}
+
+message TRequest {
+    optional TPosition position = 1;
+    repeated string words = 2;
+    repeated float audio = 3;
+    optional float sample_rate = 4;
+}
+
+message TResponse {
+    optional TPosition position = 1;
+}
