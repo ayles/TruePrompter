@@ -12,6 +12,7 @@
 #include <vector>
 #include <memory>
 #include <map>
+#include <cstdlib>
 
 class TTruePrompterServer {
 public:
@@ -21,7 +22,7 @@ public:
         : Model_(model)
     {}
 
-    void Run() {
+    void Run(uint16_t port) {
         TWebSocketServer server;
 
         try {
@@ -87,7 +88,7 @@ public:
                 }
             });
 
-            server.listen(8080);
+            server.listen(port);
             server.start_accept();
             server.run();
         } catch (websocketpp::exception const & e) {
@@ -103,14 +104,14 @@ private:
 };
 
 int main(int argc, char* argv[]) {
-    if (argc != 2) {
-        std::cerr << "Expected model path argument" << std::endl;
+    if (argc != 3) {
+        std::cerr << "Expected <port> <model_path>" << std::endl;
         return -1;
     }
     std::cerr << "Initializing.." << std::endl;
-    TTruePrompterServer server(std::make_shared<NTruePrompter::TModel>(argv[1]));
+    TTruePrompterServer server(std::make_shared<NTruePrompter::TModel>(argv[2]));
     std::cerr << "Started" << std::endl;
-    server.Run();
+    server.Run(std::atoi(argv[1]));
 }
 
 
