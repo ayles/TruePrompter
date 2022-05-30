@@ -15,11 +15,15 @@ elseif ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "AppleClang")
     add_compile_options(-fcolor-diagnostics)
 endif ()
 
+set(KALDI_BUILD_EXE OFF CACHE BOOL "Disable Kaldi exe")
+set(KALDI_BUILD_TESTS OFF CACHE BOOL "Disable Kaldi tests")
 set(BUILD_SHARED_LIBS OFF CACHE BOOL "Build static")
 
 set(CMAKE_EXPORT_PACKAGE_REGISTRY ON)
 
+find_package(Boost REQUIRED COMPONENTS system)
 find_package(BLAS REQUIRED)
+find_package(LAPACK REQUIRED)
 find_package(OpenSSL REQUIRED)
 find_package(websocketpp REQUIRED)
 find_package(Protobuf REQUIRED)

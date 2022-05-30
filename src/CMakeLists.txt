@@ -14,5 +14,6 @@ target_link_libraries(TruePrompter
     phonetisaurus
     OpenSSL::SSL
     websocketpp::websocketpp
+    Boost::system
     TruePrompterProto
 )
