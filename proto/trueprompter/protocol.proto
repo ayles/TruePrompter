@@ -10,6 +10,7 @@ message TRequest {
     repeated string words = 2;
     repeated float audio = 3;
     optional float sample_rate = 4;
+    optional uint64 look_ahead = 5;
 }
 
 message TResponse {

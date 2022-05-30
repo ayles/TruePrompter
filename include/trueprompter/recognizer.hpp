@@ -27,7 +27,7 @@ public:
             FeaturePipeline_.get());
     }
 
-    bool AcceptWaveform(const tcb::span<const float> data, float sampleRate = 48000) {
+    bool AcceptWaveform(const tcb::span<const float> data, float sampleRate) {
         if (!SilenceWeighting_) {
             SilenceWeighting_ = std::make_unique<kaldi::OnlineSilenceWeighting>(
                 *Model_->TransitionModel_,

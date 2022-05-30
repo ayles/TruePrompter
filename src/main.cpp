@@ -65,6 +65,11 @@ public:
                     matcher->SetCurrentPos({ request.position().word_index(), request.position().word_fraction() });
                 }
 
+                if (request.has_look_ahead()) {
+                    std::cerr << "updating look ahead" << std::endl;
+                    matcher->SetLookAhead(request.look_ahead());
+                }
+
                 if (!request.audio().empty() && request.sample_rate() > 0.0f) {
                     std::cerr << "updating audio" << std::endl;
 
@@ -86,9 +91,9 @@ public:
             server.start_accept();
             server.run();
         } catch (websocketpp::exception const & e) {
-            std::cout << e.what() << std::endl;
+            std::cerr << e.what() << std::endl;
         } catch (...) {
-            std::cout << "other exception" << std::endl;
+            std::cerr << "other exception" << std::endl;
         }
     }
 
@@ -97,9 +102,13 @@ private:
     std::shared_ptr<NTruePrompter::TModel> Model_;
 };
 
-int main() {
+int main(int argc, char* argv[]) {
+    if (argc != 2) {
+        std::cerr << "Expected model path argument" << std::endl;
+        return -1;
+    }
     std::cerr << "Initializing.." << std::endl;
-    TTruePrompterServer server(std::make_shared<NTruePrompter::TModel>("../../small_model"));
+    TTruePrompterServer server(std::make_shared<NTruePrompter::TModel>(argv[1]));
     std::cerr << "Started" << std::endl;
     server.Run();
 }

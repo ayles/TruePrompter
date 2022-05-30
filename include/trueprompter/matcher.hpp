@@ -9,6 +9,7 @@
 #include <vector>
 #include <string>
 #include <memory>
+#include <optional>
 
 namespace NTruePrompter {
 
@@ -20,10 +21,10 @@ public:
     }
 
     // Returns range of matched phonemes
-    tcb::span<const int64_t> Match(const tcb::span<const int64_t>& phonemes) {
+    tcb::span<const int64_t> Match(const tcb::span<const int64_t>& phonemes, size_t lookAhead = (size_t)-1) {
         auto ret = SmithWaterman<const int64_t, double>(
             phonemes,
-            tcb::span<const int64_t>(Phonemes_.data() + CommittedPhonemesPos_, Phonemes_.size() - CommittedPhonemesPos_),
+            tcb::span<const int64_t>(Phonemes_.data() + CommittedPhonemesPos_, std::min<size_t>(Phonemes_.size() - CommittedPhonemesPos_, lookAhead)),
             [](const int64_t&) {
                 return -1.0;
             },
@@ -89,13 +90,28 @@ public:
     }
 
     void AcceptWaveform(const tcb::span<const float>& data, float sampleRate) {
+        // TODO shrink SpeechPhonemes_ sometimes to reduce memory usage
         bool shouldCommit = Recognizer_->AcceptWaveform(data, sampleRate);
         auto phones = Recognizer_->GetPhones();
         SpeechPhonemes_.resize(CommittedSpeechPhonemesPos_);
         SpeechPhonemes_.insert(SpeechPhonemes_.end(), phones.begin(), phones.end());
 
         size_t window = std::min<size_t>({ SpeechPhonemes_.size() - CurrentSpeechPhonemesPos_, 20 });
-        auto matchedRange = PhonemesMatcher_->Match(tcb::span(SpeechPhonemes_.data() + SpeechPhonemes_.size() - window, window));
+        size_t lookAheadPhonemes = (size_t)-1;
+        if (LookAhead_ != (size_t)-1) {
+            size_t currentPos = PhonemesMatcher_->GetCurrentPos();
+            if (currentPos < PhonemeIndexToWordIndex_.size()) {
+                auto it = std::upper_bound(
+                    PhonemeIndexToWordIndex_.begin() + currentPos,
+                    PhonemeIndexToWordIndex_.end(),
+                    std::pair<size_t, float>(PhonemeIndexToWordIndex_[currentPos].first + LookAhead_, 0.0f)
+                );
+                if (it != PhonemeIndexToWordIndex_.end()) {
+                    lookAheadPhonemes = it - (PhonemeIndexToWordIndex_.begin() + currentPos);
+                }
+            }
+        }
+        auto matchedRange = PhonemesMatcher_->Match(tcb::span(SpeechPhonemes_.data() + SpeechPhonemes_.size() - window, window), lookAheadPhonemes);
 
         if (shouldCommit) {
             CommittedSpeechPhonemesPos_ = SpeechPhonemes_.size();
@@ -138,9 +154,18 @@ public:
         return PhonemeIndexToWordIndex_[pos];
     }
 
+    void SetLookAhead(size_t lookAhead) {
+        LookAhead_ = lookAhead;
+    }
+
+    size_t GetLookAhead() const {
+        return LookAhead_;
+    }
+
 private:
     std::shared_ptr<TModel> Model_;
     std::unique_ptr<TRecognizer> Recognizer_;
+    size_t LookAhead_ = (size_t)-1;
 
     std::vector<int64_t> SpeechPhonemes_;
     size_t CurrentSpeechPhonemesPos_ = 0;
