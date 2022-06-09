@@ -1,9 +1,6 @@
 [submodule "deps/kaldi"]
 	path = deps/kaldi
 	url = https://github.com/kaldi-asr/kaldi.git
-[submodule "deps/portaudio"]
-	path = deps/portaudio
-	url = https://github.com/PortAudio/portaudio.git
 [submodule "deps/phonetisaurus"]
 	path = deps/phonetisaurus
 	url = https://github.com/ayles/Phonetisaurus.git

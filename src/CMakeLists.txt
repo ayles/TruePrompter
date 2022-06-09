@@ -3,7 +3,6 @@ target_include_directories(TruePrompter PUBLIC ${openfst_SOURCE_DIR}/src/include
 target_include_directories(TruePrompter PUBLIC ${CMAKE_SOURCE_DIR}/include)
 target_link_libraries(TruePrompter
     span
-    PortAudio
     fst
     fstngram
     kaldi-fstext
@@ -16,4 +15,6 @@ target_link_libraries(TruePrompter
     websocketpp::websocketpp
     Boost::system
     TruePrompterProto
+    BLAS::BLAS
+    LAPACK::LAPACK
 )

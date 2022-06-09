@@ -19,7 +19,9 @@ set(KALDI_BUILD_EXE OFF CACHE BOOL "Disable Kaldi exe")
 set(KALDI_BUILD_TESTS OFF CACHE BOOL "Disable Kaldi tests")
 set(BUILD_SHARED_LIBS OFF CACHE BOOL "Build static")
 
-set(BLA_STATIC ON)
+set(Boost_USE_STATIC_LIBS ON)
+set(Protobuf_USE_STATIC_LIBS ON)
+set(OPENSSL_USE_STATIC_LIBS ON)
 
 find_package(Boost REQUIRED COMPONENTS system)
 find_package(BLAS REQUIRED)
@@ -29,12 +31,9 @@ find_package(websocketpp REQUIRED)
 find_package(Protobuf REQUIRED)
 
 add_subdirectory(deps/kaldi)
-add_subdirectory(deps/portaudio)
 add_subdirectory(deps/span)
 
 include(cmake/phonetisaurus.cmake)
-
-target_link_libraries(kaldi-online PUBLIC PortAudio)
 
 add_subdirectory(proto)
 add_subdirectory(src)
