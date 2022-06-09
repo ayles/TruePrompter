@@ -19,6 +19,8 @@ set(KALDI_BUILD_EXE OFF CACHE BOOL "Disable Kaldi exe")
 set(KALDI_BUILD_TESTS OFF CACHE BOOL "Disable Kaldi tests")
 set(BUILD_SHARED_LIBS OFF CACHE BOOL "Build static")
 
+set(BLA_STATIC ON)
+
 find_package(Boost REQUIRED COMPONENTS system)
 find_package(BLAS REQUIRED)
 find_package(LAPACK REQUIRED)
