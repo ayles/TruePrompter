@@ -8,7 +8,7 @@ git clone https://github.com/ayles/TruePrompter.git
 cd TruePrompter
 mkdir build && cd build
 cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_GENERATOR=Ninja ..
-cmake --build --target TruePrompter .
+cmake --build . --target TruePrompter
 cd ..
 ```
 
