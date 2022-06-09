@@ -24,7 +24,7 @@ public:
     tcb::span<const int64_t> Match(const tcb::span<const int64_t>& phonemes, size_t lookAhead = (size_t)-1) {
         auto ret = SmithWaterman<const int64_t, double>(
             phonemes,
-            tcb::span<const int64_t>(Phonemes_.data() + CommittedPhonemesPos_, std::min<size_t>(Phonemes_.size() - CommittedPhonemesPos_, lookAhead)),
+            tcb::span<const int64_t>(Phonemes_.data() + CommittedPhonemesPos_, std::min<size_t>(Phonemes_.size() - CommittedPhonemesPos_, lookAhead + (CurrentPhonemesPos_ - CommittedPhonemesPos_))),
             [](const int64_t&) {
                 return -1.0;
             },
