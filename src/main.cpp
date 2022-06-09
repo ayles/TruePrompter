@@ -62,12 +62,12 @@ public:
                 }
 
                 if (request.has_position()) {
-                    std::cerr << "updating position" << std::endl;
+                    std::cerr << "updating position to " << request.position().word_index() << " + " << request.position().word_fraction() << std::endl;
                     matcher->SetCurrentPos({ request.position().word_index(), request.position().word_fraction() });
                 }
 
                 if (request.has_look_ahead()) {
-                    std::cerr << "updating look ahead" << std::endl;
+                    std::cerr << "updating look ahead to " << request.look_ahead() << std::endl;
                     matcher->SetLookAhead(request.look_ahead());
                 }
 
@@ -82,7 +82,7 @@ public:
                     pos->set_word_fraction(p.second);
                     std::string data;
                     if (response.SerializeToString(&data)) {
-                        std::cerr << "sending position" << std::endl;
+                        std::cerr << "sending position " << p.first << " + " << p.second << std::endl;
                         server.send(hdl, data, websocketpp::frame::opcode::binary);
                     }
                 }

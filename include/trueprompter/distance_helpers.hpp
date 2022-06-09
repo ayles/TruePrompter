@@ -11,10 +11,10 @@
 namespace NTruePrompter {
 
 template<typename T, typename V>
-using TUnaryCost = std::function<V(const T&)>;
+using TUnaryCost = std::function<V(const T*)>;
 
 template<typename T, typename V>
-using TBinaryCost = std::function<V(const T&, const T&)>;
+using TBinaryCost = std::function<V(const T*, const T*)>;
 
 template<typename T, typename V>
 V EditDistance(
@@ -30,21 +30,21 @@ V EditDistance(
 
     std::vector<V> dist(source.size() + 1);
     for (size_t i = 1; i <= source.size(); ++i) {
-        dist[i] = dist[i - 1] + deleteCost(source[i - 1]);
+        dist[i] = dist[i - 1] + deleteCost(source.data() + i - 1);
     }
 
     for (size_t j = 1; j <= target.size(); ++j) {
         V prevDiag = dist[0];
         V prevDiagSave;
 
-        dist[0] += insertCost(target[j - 1]);
+        dist[0] += insertCost(target.data() + j - 1);
 
         for (size_t i = 1; i <= source.size(); ++i) {
             prevDiagSave = dist[i];
             if (source[i - 1] == target[j - 1]) {
                 dist[i] = prevDiag;
             } else {
-                dist[i] = std::min(std::min(dist[i - 1] + deleteCost(source[i - 1]), dist[i] + insertCost(target[j - 1])), prevDiag + replaceCost(source[i - 1], target[i - 1]));
+                dist[i] = std::min(std::min(dist[i - 1] + deleteCost(source.data() + i - 1), dist[i] + insertCost(target.data() + j - 1)), prevDiag + replaceCost(source.data() + i - 1, target.data() + i - 1));
             }
             prevDiag = prevDiagSave;
         }
@@ -54,11 +54,11 @@ V EditDistance(
 }
 
 template<typename T, typename V>
-std::vector<std::tuple<ssize_t, ssize_t, V>> SmithWaterman(
+std::tuple<tcb::span<T>, tcb::span<T>, V> SmithWaterman(
     const tcb::span<T>& source,
     const tcb::span<T>& target,
-    const TUnaryCost<T, V>& insertScore,
-    const TUnaryCost<T, V>& deleteScore,
+    const TBinaryCost<T, V>& sourceSkip,
+    const TBinaryCost<T, V>& targetSkip,
     const TBinaryCost<T, V>& similarityScore)
 {
     std::vector<std::vector<V>> score(source.size() + 1, std::vector<V>(target.size() + 1));
@@ -67,9 +67,9 @@ std::vector<std::tuple<ssize_t, ssize_t, V>> SmithWaterman(
     for (size_t i = 1; i <= source.size(); ++i) {
         for(size_t j = 1; j <= target.size(); ++j) {
             std::array<std::tuple<size_t, size_t, V>, 4> alts {{
-                { 1, 1, score[i - 1][j - 1] + similarityScore(source[i - 1], target[j - 1]) },
-                { 1, 0, score[i - 1][j] + insertScore(target[j - 1]) },
-                { 0, 1, score[i][j - 1] + deleteScore(target[j - 1]) },
+                { 1, 1, score[i - 1][j - 1] + similarityScore(source.data() + i, target.data() + j) },
+                { 1, 0, score[i - 1][j] + sourceSkip(source.data() + i, target.data() + j) },
+                { 0, 1, score[i][j - 1] + targetSkip(source.data() + i, target.data() + j) },
                 { 0, 0, V() },
             }};
 
@@ -93,24 +93,19 @@ std::vector<std::tuple<ssize_t, ssize_t, V>> SmithWaterman(
         }
     }
 
-    std::vector<std::tuple<ssize_t, ssize_t, V>> ret;
-
+    std::pair<size_t, size_t> prev = { maxElem.first + 1, maxElem.second + 1 };
     std::pair<size_t, size_t> curr = maxElem;
-    std::pair<size_t, size_t> next = traceback[curr.first][curr.second];
 
     while (score[curr.first][curr.second] != V()) {
-        ret.emplace_back(
-            curr.first == next.first ? -1 : curr.first - 1,
-            curr.second == next.second ? -1 : curr.second - 1,
-            score[curr.first][curr.second]);
-
-        curr = next;
-        next = traceback[curr.first][curr.second];
+        prev = curr;
+        curr = traceback[curr.first][curr.second];
     }
 
-    std::reverse(ret.begin(), ret.end());
-
-    return ret;
+    return {
+        tcb::span<T>(source.begin() + prev.first, source.begin() + maxElem.first + 1),
+        tcb::span<T>(target.begin() + prev.second, target.begin() + maxElem.second + 1),
+        score[maxElem.first][maxElem.second],
+    };
 }
 
 }

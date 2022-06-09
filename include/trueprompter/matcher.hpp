@@ -13,6 +13,56 @@
 
 namespace NTruePrompter {
 
+class TSpeechPhonemesBuffer {
+public:
+    explicit TSpeechPhonemesBuffer(size_t fitThreshold = 150)
+        : FitThreshold_(fitThreshold)
+    {}
+
+    void Update(const tcb::span<const int64_t>& phonemes) {
+        Phonemes_.resize(CommittedPos_);
+        Phonemes_.insert(Phonemes_.end(), phonemes.begin(), phonemes.end());
+        MatchedPos_ = std::min<size_t>(MatchedPos_, Phonemes_.size());
+    }
+
+    void Commit() {
+        CommittedPos_ = Phonemes_.size();
+        Fit();
+    }
+
+    tcb::span<const int64_t> GetUnmatched() const {
+        return tcb::span<const int64_t>(Phonemes_.data() + MatchedPos_, Phonemes_.size() - MatchedPos_);
+    }
+
+    void Match(size_t count) {
+        MatchedPos_ = std::min<size_t>(MatchedPos_ + count, Phonemes_.size());
+        Fit();
+    }
+
+    void Reset() {
+        Phonemes_.clear();
+        CommittedPos_ = 0;
+        MatchedPos_ = 0;
+    }
+
+private:
+    void Fit() {
+        size_t count = std::min<size_t>(CommittedPos_, MatchedPos_);
+        if (count < FitThreshold_) {
+            return;
+        }
+        Phonemes_.erase(Phonemes_.begin(), Phonemes_.begin() + count);
+        CommittedPos_ -= count;
+        MatchedPos_ -= count;
+    }
+
+private:
+    const size_t FitThreshold_;
+    std::vector<int64_t> Phonemes_;
+    size_t CommittedPos_ = 0;
+    size_t MatchedPos_ = 0;
+};
+
 class TPhonemesMatcher {
 public:
     explicit TPhonemesMatcher(std::vector<int64_t> phonemes)
@@ -20,61 +70,49 @@ public:
     {
     }
 
-    // Returns range of matched phonemes
-    tcb::span<const int64_t> Match(const tcb::span<const int64_t>& phonemes, size_t lookAhead = (size_t)-1) {
-        auto ret = SmithWaterman<const int64_t, double>(
+    void Match(TSpeechPhonemesBuffer& speechPhonemesBuffer, size_t lookAhead = (size_t)-1) {
+        auto speechPhonemes = speechPhonemesBuffer.GetUnmatched();
+        auto phonemes = tcb::span<const int64_t>(Phonemes_.data() + CurrentPos_, std::min<size_t>(Phonemes_.size() - CurrentPos_, lookAhead));
+
+        // Slightly decrease weight at the end of lookahead window - prioritize closer matches
+        auto weightMultiplier = [&phonemes](const int64_t* targetPos) {
+            return 1.0 - 0.3 * (double)(targetPos - phonemes.data()) / (double)phonemes.size();
+        };
+
+        // TODO match last N speech phonemes
+        const auto [speechPhonemesMatched, phonemesMatched, score] = SmithWaterman<const int64_t, double>(
+            speechPhonemes,
             phonemes,
-            tcb::span<const int64_t>(Phonemes_.data() + CommittedPhonemesPos_, std::min<size_t>(Phonemes_.size() - CommittedPhonemesPos_, lookAhead + (CurrentPhonemesPos_ - CommittedPhonemesPos_))),
-            [](const int64_t&) {
-                return -1.0;
+            [&weightMultiplier](const int64_t*, const int64_t* targetPos) {
+                return -1.0 * weightMultiplier(targetPos);
             },
-            [](const int64_t&) {
-                return -1.0;
+            [&weightMultiplier](const int64_t*, const int64_t* targetPos) {
+                return -1.0 * weightMultiplier(targetPos);
             },
-            [](const int64_t& a, const int64_t& b) {
-                return a == b ? 1.0 : -1.0;
+            [&weightMultiplier](const int64_t* sourcePos, const int64_t* targetPos) {
+                return (*sourcePos == *targetPos ? 1.0 : -1.0) * weightMultiplier(targetPos);
             }
         );
 
-        if (ret.empty() || std::get<2>(ret.back()) < 3.0) {
-            return {};
+        if (score < 3.0) {
+            return;
         }
 
-        auto it = find_if(ret.rbegin(), ret.rend(), [](const auto& x) {
-            return std::get<1>(x) != -1;
-        });
-
-        if (it != ret.rend()) {
-            CurrentPhonemesPos_ = std::max<size_t>(CurrentPhonemesPos_, CommittedPhonemesPos_ + std::get<1>(*it) + 1);
-            auto firstIt = find_if(ret.begin(), ret.end(), [](const auto& x) {
-                return std::get<0>(x) != -1;
-            });
-            auto lastIt = find_if(ret.rbegin(), ret.rend(), [](const auto& x) {
-                return std::get<0>(x) != -1;
-            });
-            return tcb::span<const int64_t>(phonemes.data() + std::get<0>(*firstIt), phonemes.data() + std::get<0>(*lastIt) + 1);
-        }
-
-        return {};
+        speechPhonemesBuffer.Match(speechPhonemesMatched.end() - speechPhonemes.begin());
+        CurrentPos_ += phonemesMatched.end() - phonemes.begin();
     }
 
     size_t GetCurrentPos() const {
-        return CurrentPhonemesPos_;
-    }
-
-    void Commit() {
-        CommittedPhonemesPos_ = CurrentPhonemesPos_;
+        return CurrentPos_;
     }
 
     void SetCurrentPos(size_t pos) {
-        CommittedPhonemesPos_ = std::min<size_t>(pos, Phonemes_.size());
-        CurrentPhonemesPos_ = CommittedPhonemesPos_;
+        CurrentPos_ = std::min<size_t>(pos, Phonemes_.size());
     }
 
 private:
     std::vector<int64_t> Phonemes_;
-    size_t CurrentPhonemesPos_ = 0;
-    size_t CommittedPhonemesPos_ = 0;
+    size_t CurrentPos_ = 0;
 };
 
 class TWordsMatcher {
@@ -82,6 +120,7 @@ public:
     TWordsMatcher(const tcb::span<const std::string>& words, const std::shared_ptr<TModel>& model)
         : Model_(model)
         , Recognizer_(std::make_unique<TRecognizer>(Model_))
+        , SpeechPhonemesBuffer_(std::make_unique<TSpeechPhonemesBuffer>())
     {
         auto [phones, phoneToWord] = Model_->GetPhonetizer().Phoneticize(words);
 
@@ -90,13 +129,9 @@ public:
     }
 
     void AcceptWaveform(const tcb::span<const float>& data, float sampleRate) {
-        // TODO shrink SpeechPhonemes_ sometimes to reduce memory usage
         bool shouldCommit = Recognizer_->AcceptWaveform(data, sampleRate);
-        auto phones = Recognizer_->GetPhones();
-        SpeechPhonemes_.resize(CommittedSpeechPhonemesPos_);
-        SpeechPhonemes_.insert(SpeechPhonemes_.end(), phones.begin(), phones.end());
+        SpeechPhonemesBuffer_->Update(Recognizer_->GetPhones());
 
-        size_t window = std::min<size_t>({ SpeechPhonemes_.size() - CurrentSpeechPhonemesPos_, 20 });
         size_t lookAheadPhonemes = (size_t)-1;
         if (LookAhead_ != (size_t)-1) {
             size_t currentPos = PhonemesMatcher_->GetCurrentPos();
@@ -111,22 +146,20 @@ public:
                 }
             }
         }
-        auto matchedRange = PhonemesMatcher_->Match(tcb::span(SpeechPhonemes_.data() + SpeechPhonemes_.size() - window, window), lookAheadPhonemes);
+
+        PhonemesMatcher_->Match(*SpeechPhonemesBuffer_, lookAheadPhonemes);
 
         if (shouldCommit) {
-            CommittedSpeechPhonemesPos_ = SpeechPhonemes_.size();
-            PhonemesMatcher_->Commit();
-
-            if (!matchedRange.empty()) {
-                CurrentSpeechPhonemesPos_ = matchedRange.data() + matchedRange.size() - SpeechPhonemes_.data();
-            }
+            SpeechPhonemesBuffer_->Commit();
         }
     }
 
     void SetCurrentPos(const std::pair<size_t, float>& pos) {
-        if (!PhonemeIndexToWordIndex_.empty() && PhonemeIndexToWordIndex_.back().first < pos.first) {
+        Recognizer_->Reset();
+        SpeechPhonemesBuffer_->Reset();
+
+        if (PhonemeIndexToWordIndex_.empty() || PhonemeIndexToWordIndex_.back().first < pos.first) {
             PhonemesMatcher_->SetCurrentPos(PhonemeIndexToWordIndex_.size());
-            Recognizer_->Reset();
             return;
         }
 
@@ -143,7 +176,6 @@ public:
         }
 
         PhonemesMatcher_->SetCurrentPos(it - PhonemeIndexToWordIndex_.begin());
-        Recognizer_->Reset();
     }
 
     std::pair<size_t, float> GetCurrentPos() const {
@@ -167,10 +199,7 @@ private:
     std::unique_ptr<TRecognizer> Recognizer_;
     size_t LookAhead_ = (size_t)-1;
 
-    std::vector<int64_t> SpeechPhonemes_;
-    size_t CurrentSpeechPhonemesPos_ = 0;
-    size_t CommittedSpeechPhonemesPos_ = 0;
-
+    std::unique_ptr<TSpeechPhonemesBuffer> SpeechPhonemesBuffer_;
     std::unique_ptr<TPhonemesMatcher> PhonemesMatcher_;
     std::vector<std::pair<size_t, float>> PhonemeIndexToWordIndex_;
 };
