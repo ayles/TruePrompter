@@ -46,5 +46,7 @@ namespace fst {
 
 static FstRegisterer<StdOLabelLookAheadFst> OLabelLookAheadFst_StdArc_registerer;
 static FstRegisterer<NGramFst<StdArc>> NGramFst_StdArc_registerer;
+static FstRegisterer<ConstFst<StdArc>> ConstFst_StdArc_registerer;
+static FstRegisterer<VectorFst<StdArc>> VectorFst_StdArc_registerer;
 
 }

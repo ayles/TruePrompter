@@ -23,7 +23,7 @@ public:
             Model_->DecodingConfig_,
             *Model_->TransitionModel_,
             *Model_->DecodableInfo_,
-            *FST_,
+            *Model_->HC_,
             FeaturePipeline_.get());
     }
 
@@ -77,6 +77,19 @@ public:
 
     std::vector<int64_t> GetPhones() const {
         if (!Decoder_->NumFramesInLattice()) {
+            return {};
+        }
+
+        {
+            kaldi::Lattice kek;
+            Decoder_->GetBestPath(false, &kek);
+            std::vector<kaldi::int32> alignment, words;
+            kaldi::LatticeWeight weight;
+            GetLinearSymbolSequence(kek, &alignment, &words, &weight);
+            for (size_t i = 0; i < words.size(); i++) {
+                std::cout << Model_->PhoneSyms_->Find(words[i]) << " ";
+            }
+            std::cout << std::endl;
             return {};
         }
 

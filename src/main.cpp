@@ -6,7 +6,7 @@
 #include <websocketpp/server.hpp>
 #include <websocketpp/config/asio.hpp>
 
-//#include <online/online-audio-source.h>
+#include <feat/wave-reader.h>
 
 #include <iostream>
 #include <vector>
@@ -115,41 +115,26 @@ int main(int argc, char* argv[]) {
 }
 
 
-/*int main() {
-    // Needs ICU or smth alike to make Lower()
-    std::vector<std::string> words1 = { "карл", "у", "клары", "украл", "кораллы", "клара", "у", "карла", "украла", "кларнет" };
-    std::vector<std::string> words = { "раз", "два", "три", "четыре", "пять" };
+/*int main(int argc, char* argv[]) {
+    kaldi::WaveHolder h;
+    std::ifstream f("../../wave.wav");
+    h.Read(f);
+    kaldi::Vector<kaldi::BaseFloat> input(h.Value().Data().NumCols());
+    input.CopyRowFromMat(h.Value().Data(), 1);
 
-    std::cerr << "Loading model..." << std::endl;
-    auto model = std::make_shared<NTruePrompter::TModel>("../../small_model");
-    std::cerr << "Phoneticizing..." << std::endl;
-    auto matcher = std::make_shared<NTruePrompter::TWordsMatcher>(words, model);
-    std::cerr << "Done" << std::endl;
+    auto model = std::make_shared<NTruePrompter::TModel>(argv[2]);
+    auto matcher = std::make_unique<NTruePrompter::TWordsMatcher>(std::vector<std::string>({ "арбуз" }), model);
 
-    constexpr float sampleRate = 48000;
-    kaldi::OnlinePaSource pa(0, sampleRate, sampleRate * 10, 0);
-    kaldi::Vector<kaldi::BaseFloat> vec;
-    vec.Resize(sampleRate / 2);
-
-    while (true) {
-        if (!pa.Read(&vec)) {
-            continue;
-        }
-
-        matcher->AcceptWaveform(tcb::span<float>(vec.Data(), vec.Dim()), sampleRate);
-
-        std::cout << tcb::span<float>(vec.Data(), vec.Dim())[0] << std::endl;
-
-        std::cout << "\r";
-        for (size_t i = 0; i < words.size(); ++i) {
-            if (i < matcher->GetCurrentPos().first) {
-                std::cout << "\x1B[31m" << words[i] << "\x1B[0m";
-            } else {
-                std::cout << words[i];
-            }
-            std::cout << " ";
+    float ff = 0;
+    for (int i = 0; i < input.Dim(); ++i) {
+        if (std::abs(input.Data()[i]) > ff) {
+            ff = std::abs(input.Data()[i]);
         }
     }
+    std::cout << ff << std::endl;
 
-    return 0;
+    matcher->AcceptWaveform(tcb::span<const float>(input.Data(), input.Dim()), h.Value().SampFreq());
+
+    auto p = matcher->GetCurrentPos();
+    std::cout << p.first << " " << p.second << std::endl;
 }*/

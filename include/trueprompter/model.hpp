@@ -36,7 +36,7 @@ public:
         , NNet_(std::make_unique<kaldi::nnet3::AmNnetSimple>()) {
         {
             bool binary;
-            kaldi::Input ki(path + "/am/final.mdl", &binary);
+            kaldi::Input ki(path + "/../prepared_model/final.mdl", &binary);
             TransitionModel_->Read(ki.Stream(), binary);
             NNet_->Read(ki.Stream(), binary);
             SetBatchnormTestMode(true, &NNet_->GetNnet());
@@ -77,6 +77,7 @@ public:
         DecodableInfo_ = std::make_unique<kaldi::nnet3::DecodableNnetSimpleLoopedInfo>(DecodableOpts_, NNet_.get());
 
         HCL_ = std::unique_ptr<fst::Fst<fst::StdArc>>(fst::StdFst::Read(path + "/graph/HCLr.fst"));
+        HC_ = std::unique_ptr<fst::Fst<fst::StdArc>>(fst::StdFst::Read(path + "/../prepared_model/HC.fst"));
         G_ = std::unique_ptr<fst::Fst<fst::StdArc>>(fst::StdFst::Read(path + "/graph/Gr.fst"));
         kaldi::ReadIntegerVectorSimple(path + "/graph/disambig_tid.int", &Disambig_);
 
@@ -126,10 +127,11 @@ private:
 
     std::unique_ptr<kaldi::nnet3::DecodableNnetSimpleLoopedInfo> DecodableInfo_;
 
+    std::unique_ptr<fst::Fst<fst::StdArc>> HC_;
     std::unique_ptr<fst::Fst<fst::StdArc>> HCL_;
     std::unique_ptr<fst::Fst<fst::StdArc>> G_;
     std::vector<int32_t> Disambig_;
-
+public:
     std::unique_ptr<fst::SymbolTable> PhoneSyms_;
 };
 
