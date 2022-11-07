@@ -15,3 +15,4 @@ target_include_directories(
 
 target_link_libraries(phonetisaurus PRIVATE fst fstngram fstfar)
 target_include_directories(phonetisaurus PRIVATE ${openfst_SOURCE_DIR}/src/include)
+set_property(TARGET phonetisaurus PROPERTY CXX_STANDARD 17)

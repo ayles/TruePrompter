@@ -4,6 +4,12 @@
 [submodule "deps/phonetisaurus"]
 	path = deps/phonetisaurus
 	url = https://github.com/ayles/Phonetisaurus.git
-[submodule "deps/span"]
-	path = deps/span
-	url = https://github.com/tcbrindle/span.git
+[submodule "deps/portaudio"]
+	path = deps/portaudio
+	url = https://github.com/PortAudio/portaudio.git
+[submodule "deps/utfcpp"]
+	path = deps/utfcpp
+	url = https://github.com/nemtrif/utfcpp.git
+[submodule "deps/spdlog"]
+	path = deps/spdlog
+	url = https://github.com/gabime/spdlog.git

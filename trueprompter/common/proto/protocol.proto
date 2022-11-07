@@ -1,0 +1,16 @@
+import "audio_codec.proto";
+
+package NTruePrompter.NProtocol.NProto;
+
+message TRequest {
+    optional string text = 1;
+    optional uint64 text_offset = 2;
+    optional uint64 look_ahead = 3;
+
+    optional NTruePrompter.NAudioCodec.NProto.TAudioMeta audio_meta = 4;
+    optional bytes audio_data = 5;
+}
+
+message TResponse {
+    optional uint64 text_offset = 1;
+}
