@@ -23,7 +23,6 @@
 
 namespace {
 
-
 class TPhonetizer {
 public:
     TPhonetizer(const std::filesystem::path& path)
@@ -47,35 +46,38 @@ public:
             return c > std::numeric_limits<unsigned char>::max() || !std::isspace((unsigned char)c);
         };
 
-        auto flush = [this, &text, &phones, &mapping](const std::string::const_iterator& begin, const std::string::const_iterator& end) {
-            auto ret = PhonetisaurusDecoder_.Phoneticize(std::string(begin, end));
-            auto it = begin;
-            float textFraction = 0.0f;
+        auto flush = [this, &phones, &mapping](const std::string& s, size_t from, size_t to) {
+            auto ret = PhonetisaurusDecoder_.Phoneticize(s);
             for (size_t j = 0; j < ret[0].Uniques.size(); ++j) {
                 phones.emplace_back(ret[0].Uniques[j]);
-                const float phoneFraction = float(j) / ret[0].Uniques.size();
-                while (textFraction < phoneFraction && it != end) {
-                    utf8::next(it, end);
-                    textFraction = float(std::distance(begin, it)) / std::distance(begin, end);
-                }
-                mapping.emplace_back(it - text.begin());
+                mapping.emplace_back(std::min<size_t>(to - from - 1, (to - from) * j / ret[0].Uniques.size()) + from);
             }
         };
 
-        auto wordStartIt = text.begin();
-        auto it = text.begin();
-        while (it != text.end()) {
-            uint32_t c = utf8::peek_next(it, text.end());
+        size_t wordPos = 0;
+        size_t currentPos = 0;
+        auto wordIt = text.begin();
+        auto currentIt = text.begin();
+        while (currentIt != text.end()) {
+            uint32_t c = utf8::peek_next(currentIt, text.end());
             if (isWordSymbol(c)) {
-                utf8::next(it, text.end());
+                utf8::next(currentIt, text.end());
+                currentPos++;
             } else {
-                flush(wordStartIt, it);
-                do {
-                    wordStartIt = it;
-                } while (it != text.end() && !isWordSymbol(utf8::next(it, text.end())));
+                flush(std::string(wordIt, currentIt), wordPos, currentPos);
+                wordPos = currentPos;
+                wordIt = currentIt;
+                while (currentIt != text.end()) {
+                    currentPos++;
+                    if (isWordSymbol(utf8::next(currentIt, text.end()))) {
+                        break;
+                    }
+                    wordPos = currentPos;
+                    wordIt = currentIt;
+                }
             }
         }
-        flush(wordStartIt, it);
+        flush(std::string(wordIt, currentIt), wordPos, currentPos);
 
         return { phones, mapping };
     }
@@ -83,7 +85,6 @@ public:
 private:
     mutable PhonetisaurusScript PhonetisaurusDecoder_;
 };
-
 
 class TModel {
 public:
@@ -227,7 +228,6 @@ private:
     std::unique_ptr<fst::SymbolTable> PhoneSyms_;
 };
 
-
 class TRecognizer : public NTruePrompter::NRecognition::IRecognizer {
 public:
     TRecognizer(std::shared_ptr<TModel> model)
@@ -236,7 +236,7 @@ public:
         std::tie(FeaturePipeline_, Decoder_) = Model_->CreateFeaturePipelineAndDecoder();
     }
 
-    bool AcceptWaveform(const float* data, size_t dataSize, float sampleRate) override {
+    bool AcceptWaveform(const float* data, size_t dataSize, int32_t sampleRate) override {
         if (!SilenceWeighting_) {
             SilenceWeighting_ = Model_->CreateSilenceWeighting();
         }
@@ -326,7 +326,6 @@ private:
     int32_t FrameOffset_ = 0;
 };
 
-
 class TRecognizerFactory : public NTruePrompter::NRecognition::IRecognizerFactory {
 public:
     TRecognizerFactory(const std::filesystem::path& path)
@@ -342,7 +341,6 @@ private:
 };
 
 }
-
 
 std::shared_ptr<NTruePrompter::NRecognition::IRecognizerFactory> NTruePrompter::NRecognition::CreateRecognizerFactory(const std::filesystem::path& path) {
     return std::make_shared<TRecognizerFactory>(path);

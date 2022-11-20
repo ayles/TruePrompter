@@ -1,0 +1,22 @@
+syntax = "proto3";
+
+package NTruePrompter.NCodec.NProto;
+
+enum EFormat {
+    RAW = 0;
+    OGG = 1;
+    MPEG = 2;
+}
+
+enum ECodec {
+    PCM_F32LE = 0;
+    VORBIS = 1;
+    OPUS = 2;
+    MP3 = 3;
+}
+
+message TAudioMeta {
+    EFormat format = 1;
+    ECodec codec = 2;
+    int32 sample_rate = 3;
+}

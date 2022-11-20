@@ -1,7 +1,9 @@
 #include "audio_source.hpp"
 
-#include <trueprompter/common/audio_codec.hpp>
+#include <trueprompter/codec/audio_codec.hpp>
 #include <trueprompter/common/proto/protocol.pb.h>
+
+#include <utf8.h>
 
 #include <websocketpp/config/asio_no_tls_client.hpp>
 #include <websocketpp/client.hpp>
@@ -31,13 +33,30 @@ int main(int argc, char* argv[]) {
     std::string text = buffer.str();
 
     // Init encoder
-    NTruePrompter::NAudioCodec::NProto::TAudioMeta meta;
-    meta.set_codec(NTruePrompter::NAudioCodec::NProto::ECodec::RAW_PCM_F32LE);
+    NTruePrompter::NCodec::NProto::TAudioMeta meta;
+    meta.set_format(NTruePrompter::NCodec::NProto::EFormat::OGG);
+    meta.set_codec(NTruePrompter::NCodec::NProto::ECodec::OPUS);
     meta.set_sample_rate(48000);
-    auto encoder = NTruePrompter::NAudioCodec::CreateEncoder(meta);
+    auto encoder = NTruePrompter::NCodec::CreateEncoder(meta);
 
     // Init audio input
-    auto audioSource = NTruePrompter::NAudioSource::MakeMicrophoneAudioSource(encoder->GetMeta().sample_rate());
+    auto audioSource = NTruePrompter::NAudioSource::MakeMicrophoneAudioSource(encoder->GetSampleRate());
+
+    /*{
+        std::ofstream f("out.ogg");
+        for (size_t i = 0; i < 10; ++i) {
+            std::vector<float> audioBuffer(8192);
+            size_t samples = audioSource->Read(audioBuffer.data(), audioBuffer.size());
+            encoder->SetCallback([&f](const uint8_t* data, size_t size) {
+                f.write(reinterpret_cast<const char*>(data), size);
+            });
+            encoder->Encode(audioBuffer.data(), samples);
+        }
+        encoder->Finalize();
+        f.flush();
+        f.close();
+        return 0;
+    }*/
 
     websocketpp::client<websocketpp::config::asio_client> client;
     client.clear_access_channels(websocketpp::log::alevel::all);
@@ -50,12 +69,13 @@ int main(int argc, char* argv[]) {
         thread.emplace([&, hdl]() {
             {
                 std::scoped_lock guard(lock);
-                NTruePrompter::NProtocol::NProto::TRequest initialRequest;
-                initialRequest.set_text(text);
-                initialRequest.set_text_offset(0);
-                initialRequest.set_look_ahead(100);
-                *initialRequest.mutable_audio_meta() = encoder->GetMeta();
-                client.send(hdl, initialRequest.SerializeAsString(), websocketpp::frame::opcode::value::binary);
+
+                NTruePrompter::NCommon::NProto::TRequest initialMessage;
+                initialMessage.mutable_handshake()->set_client_name("trueprompter_client");
+                initialMessage.mutable_text_data()->set_text(text);
+                *initialMessage.mutable_audio_data()->mutable_meta() = encoder->GetMeta();
+                initialMessage.mutable_matcher_params()->mutable_look_ahead()->set_value(100);
+                client.send(hdl, initialMessage.SerializeAsString(), websocketpp::frame::opcode::value::binary);
             }
 
             std::vector<float> audioBuffer(8192);
@@ -63,10 +83,10 @@ int main(int argc, char* argv[]) {
             while (!hdl.expired()) {
                 std::scoped_lock guard(lock);
 
-                NTruePrompter::NProtocol::NProto::TRequest request;
+                NTruePrompter::NCommon::NProto::TRequest request;
                 size_t samples = audioSource->Read(audioBuffer.data(), audioBuffer.size());
                 encoder->SetCallback([&request](const uint8_t* data, size_t size) {
-                    request.mutable_audio_data()->insert(request.mutable_audio_data()->begin(), data, data + size);
+                    request.mutable_audio_data()->mutable_data()->insert(request.mutable_audio_data()->mutable_data()->end(), data, data + size);
                 });
                 encoder->Encode(audioBuffer.data(), samples);
 
@@ -75,16 +95,25 @@ int main(int argc, char* argv[]) {
         });
     });
 
-    client.set_message_handler([&, currentPosition = (size_t)0](websocketpp::connection_hdl, websocketpp::config::asio_client::message_type::ptr message) mutable {
+    client.set_message_handler([&, currentPosition = text.begin()](websocketpp::connection_hdl, websocketpp::config::asio_client::message_type::ptr message) mutable {
         if (message->get_opcode() != websocketpp::frame::opcode::value::binary) {
             throw std::runtime_error("Error");
         }
 
-        NTruePrompter::NProtocol::NProto::TResponse response;
+        NTruePrompter::NCommon::NProto::TResponse response;
         response.ParseFromString(message->get_payload());
-        size_t newPosition = std::clamp<size_t>(response.text_offset(), currentPosition, text.size());
-        std::cout << text.substr(currentPosition, newPosition - currentPosition) << std::flush;
-        currentPosition = newPosition;
+
+        if (response.msg_case() == NTruePrompter::NCommon::NProto::TResponse::kRecognitionResult) {
+            auto it = text.begin();
+            utf8::advance(it, response.recognition_result().text_pos(), text.end());
+            it = it > currentPosition ? it : currentPosition;
+            std::cout << std::string(currentPosition, it) << std::flush;
+            currentPosition = it;
+        } else if (response.msg_case() == NTruePrompter::NCommon::NProto::TResponse::kError) {
+            std::cerr << "Error (code: " << response.error().code() << "): " << response.error().what() << std::endl;
+        } else {
+            std::cerr << "Unknown response message type" << std::endl;
+        }
     });
 
     client.set_close_handler([&](websocketpp::connection_hdl) {

@@ -1,12 +1,10 @@
 #pragma once
 
-
 #include <cstddef>
 #include <memory>
 
 
 namespace NTruePrompter::NAudioSource {
-
 
 class IAudioSource {
 public:
@@ -22,8 +20,6 @@ public:
     virtual ~IAudioSource() = default;
 };
 
-
 std::shared_ptr<IAudioSource> MakeMicrophoneAudioSource(int32_t sampleRate);
 
-
-} // NTruePrompter::NClient
+} // NTruePrompter::NAudioSource

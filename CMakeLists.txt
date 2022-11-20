@@ -15,7 +15,6 @@ set(OPENSSL_USE_STATIC_LIBS ON)
 # Do not disable logging in compile time
 add_definitions(-DSPDLOG_ACTIVE_LEVEL=0)
 
-find_package(PkgConfig REQUIRED)
 find_package(Boost REQUIRED COMPONENTS system)
 find_package(BLAS REQUIRED)
 find_package(LAPACK REQUIRED)
@@ -23,20 +22,13 @@ find_package(OpenSSL REQUIRED)
 find_package(websocketpp REQUIRED)
 find_package(Protobuf REQUIRED)
 
-pkg_check_modules(LIBAV REQUIRED IMPORTED_TARGET
-    libavdevice
-    libavfilter
-    libavformat
-    libavcodec
-    libswresample
-    libswscale
-    libavutil
-)
+include(cmake/proto_utils.cmake)
 
 add_subdirectory(deps/kaldi)
 add_subdirectory(deps/portaudio)
 add_subdirectory(deps/utfcpp)
 add_subdirectory(deps/spdlog)
+add_subdirectory(deps/avcpp)
 add_subdirectory(cmake/phonetisaurus)
 
 add_subdirectory(trueprompter)

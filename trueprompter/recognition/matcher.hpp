@@ -1,6 +1,5 @@
 #pragma once
 
-
 #include "smith_waterman.hpp"
 #include "recognizer.hpp"
 
@@ -12,7 +11,6 @@
 
 
 namespace NTruePrompter::NRecognition {
-
 
 class TSpeechPhonemesBuffer {
 public:
@@ -64,39 +62,48 @@ private:
     size_t MatchedPos_ = 0;
 };
 
-
 class TPhonemesMatcher {
 public:
+    struct TMatchParameters {
+        std::optional<size_t> LookAhead;
+        double FadeOverLookAhead = 0.3;
+        double SimilarScore = 1.0;
+        double DifferentScore = -1.0;
+        double SourceSkipWeight = -1.0;
+        double TargetSkipWeight = -1.0;
+        double MinMatchWeight = 3.0;
+    };
+
     explicit TPhonemesMatcher(std::vector<int64_t> phonemes)
         : Phonemes_(std::move(phonemes))
     {
     }
 
-    void Match(TSpeechPhonemesBuffer& speechPhonemesBuffer, size_t lookAhead = (size_t)-1) {
+    void Match(TSpeechPhonemesBuffer& speechPhonemesBuffer, const TMatchParameters& matchParameters) {
         auto speechPhonemes = speechPhonemesBuffer.GetUnmatched();
-        auto phonemes = std::span<const int64_t>(Phonemes_.data() + CurrentPos_, std::min<size_t>(Phonemes_.size() - CurrentPos_, lookAhead));
+        auto phonemes = std::span<const int64_t>(Phonemes_.data() + CurrentPos_, std::min<size_t>(Phonemes_.size() - CurrentPos_, matchParameters.LookAhead.value_or((size_t)-1)));
 
         // Slightly decrease weight at the end of lookahead window - prioritize closer matches
-        auto weightMultiplier = [&phonemes](const int64_t* targetPos) {
-            return 1.0 - 0.3 * (double)(targetPos - phonemes.data()) / (double)phonemes.size();
+        auto weightMultiplier = [&phonemes, &matchParameters](const int64_t* targetPos) {
+            return 1.0 - matchParameters.FadeOverLookAhead * (double)(targetPos - phonemes.data()) / (double)phonemes.size();
         };
 
         // TODO match last N speech phonemes
         const auto [speechPhonemesMatched, phonemesMatched, score] = SmithWaterman<const int64_t, double>(
             speechPhonemes,
             phonemes,
-            [&weightMultiplier](const int64_t*, const int64_t* targetPos) {
-                return -1.0 * weightMultiplier(targetPos);
+            [&weightMultiplier, &matchParameters](const int64_t*, const int64_t* targetPos) {
+                return matchParameters.SourceSkipWeight * weightMultiplier(targetPos);
             },
-            [&weightMultiplier](const int64_t*, const int64_t* targetPos) {
-                return -1.0 * weightMultiplier(targetPos);
+            [&weightMultiplier, &matchParameters](const int64_t*, const int64_t* targetPos) {
+                return matchParameters.TargetSkipWeight * weightMultiplier(targetPos);
             },
-            [&weightMultiplier](const int64_t* sourcePos, const int64_t* targetPos) {
-                return (*sourcePos == *targetPos ? 1.0 : -1.0) * weightMultiplier(targetPos);
+            [&weightMultiplier, &matchParameters](const int64_t* sourcePos, const int64_t* targetPos) {
+                return (*sourcePos == *targetPos ? matchParameters.SimilarScore : matchParameters.DifferentScore) * weightMultiplier(targetPos);
             }
         );
 
-        if (score < 3.0) {
+        if (score < matchParameters.MinMatchWeight) {
             return;
         }
 
@@ -117,7 +124,6 @@ private:
     size_t CurrentPos_ = 0;
 };
 
-
 class TWordsMatcher {
 public:
     TWordsMatcher(const std::string& text, std::shared_ptr<IRecognizer> recognizer)
@@ -130,26 +136,27 @@ public:
         PhonemeIndexToTextIndex_ = std::move(phoneToWord);
     }
 
-    void AcceptWaveform(const float* data, size_t dataSize, float sampleRate) {
+    void AcceptWaveform(const float* data, size_t dataSize, int32_t sampleRate) {
         bool shouldCommit = Recognizer_->AcceptWaveform(data, dataSize, sampleRate);
         SpeechPhonemesBuffer_->Update(Recognizer_->GetPhones());
 
-        size_t lookAheadPhonemes = (size_t)-1;
-        if (LookAhead_ != (size_t)-1) {
+        TPhonemesMatcher::TMatchParameters matchParameters = MatchParameters_;
+        if (matchParameters.LookAhead) {
             size_t currentPos = PhonemesMatcher_->GetCurrentPos();
             if (currentPos < PhonemeIndexToTextIndex_.size()) {
                 auto it = std::upper_bound(
                     PhonemeIndexToTextIndex_.begin() + currentPos,
                     PhonemeIndexToTextIndex_.end(),
-                    PhonemeIndexToTextIndex_[currentPos] + LookAhead_
+                    PhonemeIndexToTextIndex_[currentPos] + matchParameters.LookAhead.value()
                 );
                 if (it != PhonemeIndexToTextIndex_.end()) {
-                    lookAheadPhonemes = it - (PhonemeIndexToTextIndex_.begin() + currentPos);
+                    // Convert N-characters to N-phonemes lookahead
+                    matchParameters.LookAhead = it - (PhonemeIndexToTextIndex_.begin() + currentPos);
                 }
             }
         }
 
-        PhonemesMatcher_->Match(*SpeechPhonemesBuffer_, lookAheadPhonemes);
+        PhonemesMatcher_->Match(*SpeechPhonemesBuffer_, matchParameters);
 
         if (shouldCommit) {
             SpeechPhonemesBuffer_->Commit();
@@ -188,22 +195,22 @@ public:
         return PhonemeIndexToTextIndex_[pos];
     }
 
-    void SetLookAhead(size_t lookAhead) {
-        LookAhead_ = lookAhead;
+    void SetMatchParameters(const TPhonemesMatcher::TMatchParameters& matchParameters) {
+        MatchParameters_ = matchParameters;
     }
 
-    size_t GetLookAhead() const {
-        return LookAhead_;
+    const TPhonemesMatcher::TMatchParameters& GetMatchParameters() const {
+        return MatchParameters_;
     }
 
 private:
+    TPhonemesMatcher::TMatchParameters MatchParameters_;
+
     std::shared_ptr<IRecognizer> Recognizer_;
-    size_t LookAhead_ = (size_t)-1;
 
     std::unique_ptr<TSpeechPhonemesBuffer> SpeechPhonemesBuffer_;
     std::unique_ptr<TPhonemesMatcher> PhonemesMatcher_;
     std::vector<size_t> PhonemeIndexToTextIndex_;
 };
 
-
-} // namespace NTruePrompter::NServer
+} // namespace NTruePrompter::NRecognition

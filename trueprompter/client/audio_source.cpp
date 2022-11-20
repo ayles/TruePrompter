@@ -8,7 +8,6 @@
 
 namespace {
 
-
 class TMicAudioSource : public NTruePrompter::NAudioSource::IAudioSource {
 public:
     static constexpr size_t RingBufferElementsCount = 65536;
@@ -86,15 +85,12 @@ private:
     PaStream* Stream_;
 };
 
-
 }
 
 namespace NTruePrompter::NAudioSource {
-
 
 std::shared_ptr<IAudioSource> MakeMicrophoneAudioSource(int32_t sampleRate) {
     return std::make_shared<TMicAudioSource>(sampleRate);
 }
 
-
-} // NTruePrompter::NClient
+} // NTruePrompter::NAudioSource

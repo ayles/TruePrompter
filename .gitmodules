@@ -13,3 +13,6 @@
 [submodule "deps/spdlog"]
 	path = deps/spdlog
 	url = https://github.com/gabime/spdlog.git
+[submodule "deps/avcpp"]
+	path = deps/avcpp
+	url = https://github.com/h4tr3d/avcpp.git

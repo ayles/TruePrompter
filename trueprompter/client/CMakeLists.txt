@@ -8,7 +8,8 @@ target_include_directories(trueprompter_client PUBLIC ${CMAKE_SOURCE_DIR})
 
 target_link_libraries(trueprompter_client
     trueprompter_common
-    trueprompter_common_proto
+    trueprompter_codec
     PortAudio
     websocketpp::websocketpp
+    utf8::cpp
 )

@@ -1,16 +1,125 @@
-import "audio_codec.proto";
+syntax = "proto3";
 
-package NTruePrompter.NProtocol.NProto;
+import "trueprompter/codec/proto/audio_codec.proto";
+
+import "google/protobuf/wrappers.proto";
+
+package NTruePrompter.NCommon.NProto;
 
 message TRequest {
-    optional string text = 1;
-    optional uint64 text_offset = 2;
-    optional uint64 look_ahead = 3;
+    message THandshake {
+        /**
+         * Arbitrary human-readable name for convenient logs grep and debug
+         */
+        string client_name = 1;
+    }
 
-    optional NTruePrompter.NAudioCodec.NProto.TAudioMeta audio_meta = 4;
-    optional bytes audio_data = 5;
+    message TTextData {
+        /**
+         * New text to set for recognition.
+         * Unset text will be treated as empty.
+         */
+        string text = 1;
+
+        /**
+         * Position in provided text, in unicode characters.
+         * Unset means start from beginning
+         */
+        uint64 text_pos = 2;
+    }
+
+    message TAudioData {
+        /**
+         * Audio meta, will be used to initialize decoder.
+         * Should be provided before any audio_data.
+         * Can be provided again to reinitialize decoder.
+         * NOTE: on decoder reinitialization, there is no guarantee that no samples will be lost.
+         */
+        NTruePrompter.NCodec.NProto.TAudioMeta meta = 1;
+
+        /**
+         * Audio data in format, specified in audio_meta.
+         * Sending it before audio_meta will result in undefined behaviour.
+         */
+        bytes data = 2;
+    }
+
+    /**
+     * Not set value means default.
+     */
+    message TMatcherParams {
+        /**
+         * Match window size from current text position, in unicode characters.
+         * default = max
+         */
+        google.protobuf.UInt64Value look_ahead = 1;
+
+        /**
+         * Score fade along look_ahead window, from 0.0 for no fade to 1.0 for total score fade at the end of look_ahead window.
+         * default = 0.3
+         */
+        google.protobuf.DoubleValue fade_over_look_ahead = 2;
+
+        /**
+         * Score if two phonemes match.
+         * default = 1.0
+         */
+        google.protobuf.DoubleValue similar_score = 3;
+
+        /*
+         * Score if two phonemes differ.
+         * default = -1.0
+         */
+        google.protobuf.DoubleValue different_score = 4;
+
+        /*
+         * Score if speech phoneme is missing in text
+         * default = -1.0
+         */
+        google.protobuf.DoubleValue source_skip_weight = 5;
+
+        /*
+         * Score if text phoneme is missing in speech.
+         * default = -1.0
+         */
+        google.protobuf.DoubleValue target_skip_weight = 6;
+
+        /*
+         * Min score to count speech-text match.
+         * That is, there should be at least one speech-text match after last recognized text_pos with
+         * weight greater than this setting to actually move text_pos again.
+         * Speech-text phonemes regions weight is calculated using weight settings above.
+         * default = 3.0
+         */
+        google.protobuf.DoubleValue min_match_weight = 7;
+    }
+
+    /**
+     * To begin, first client should provide handshake message.
+     * Without handshake other messages mean nothing.
+     * After handshake message, other messages can be used independently and in any order.
+     */
+    THandshake handshake = 1;
+    TTextData text_data = 2;
+    TAudioData audio_data = 3;
+    TMatcherParams matcher_params = 4;
 }
 
 message TResponse {
-    optional uint64 text_offset = 1;
+    message TRecognitionResult {
+        /**
+         * Position in provided text, in unicode characters.
+         */
+        uint64 text_pos = 1;
+    }
+
+    message TError {
+        int64 code = 1;
+        string what = 2;
+    }
+
+    oneof msg {
+        TRecognitionResult recognition_result = 1;
+        TError error = 2;
+    }
 }

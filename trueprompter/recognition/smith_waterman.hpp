@@ -10,7 +10,6 @@
 
 namespace NTruePrompter::NRecognition {
 
-
 template<typename T, typename V>
 std::tuple<std::span<T>, std::span<T>, V> SmithWaterman(
     std::span<T> source,
@@ -66,5 +65,4 @@ std::tuple<std::span<T>, std::span<T>, V> SmithWaterman(
     };
 }
 
-
-} // namespace NTruePrompter::NServer
+} // namespace NTruePrompter::NRecognition
