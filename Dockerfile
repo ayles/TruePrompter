@@ -17,6 +17,7 @@ RUN apt update
 RUN apt install -y libopenblas-base ffmpeg
 COPY --from=builder /app/bin/trueprompter/server/trueprompter_server /app/bin/trueprompter/server/trueprompter_server
 COPY --from=builder /app/src/small_model /app/src/small_model
+RUN mkdir /app/logs
 WORKDIR /app
-CMD ["bin/trueprompter/server/trueprompter_server", "8080", "src/small_model"]
+CMD ["bin/trueprompter/server/trueprompter_server", "8080", "src/small_model", "logs/info.log", "logs/debug.log"]
 EXPOSE 8080/tcp
