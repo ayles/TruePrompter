@@ -1,4 +1,6 @@
 ## TruePrompter
+![build](https://github.com/ayles/TruePrompter/actions/workflows/build.yaml/badge.svg)
+
 Teleprompter server with speech recognition
 
 ## Build
