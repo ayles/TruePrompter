@@ -19,6 +19,7 @@
 #include <online2/online-nnet3-incremental-decoding.h>
 
 #include <unordered_map>
+#include <optional>
 
 
 namespace {

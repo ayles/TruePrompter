@@ -363,7 +363,7 @@ private:
             if (Stream_.raw()->codecpar->sample_rate != inputSampleRate) {
                 throw std::runtime_error("Wrong sample rate");
             }
-            if (Stream_.raw()->codecpar->ch_layout.nb_channels != inputChannels) {
+            if (Stream_.raw()->codecpar->channels != inputChannels) {
                 throw std::runtime_error("Wrong channels count");
             }
 
