@@ -10,6 +10,6 @@ target_link_libraries(trueprompter_client
     trueprompter_common
     trueprompter_codec
     PortAudio
-    websocketpp::websocketpp
+    websocketpp_complete
     utf8::cpp
 )

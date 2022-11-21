@@ -6,8 +6,6 @@ target_link_libraries(trueprompter_server
     trueprompter_recognition
     trueprompter_common
     trueprompter_codec
-    OpenSSL::SSL
-    websocketpp::websocketpp
-    Boost::system
+    websocketpp_complete
     spdlog
 )
