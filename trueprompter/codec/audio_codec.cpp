@@ -1,6 +1,8 @@
 #include "audio_codec.hpp"
 #include "av_audio_codec.hpp"
 
+#include <tuple>
+
 
 namespace {
 
@@ -48,6 +50,14 @@ public:
         return SampleRate_;
     }
 
+    NTruePrompter::NCodec::NProto::TAudioMeta GetMeta() const override {
+        NTruePrompter::NCodec::NProto::TAudioMeta meta;
+        meta.set_sample_rate(GetSampleRate());
+        meta.set_format(NTruePrompter::NCodec::NProto::EFormat::RAW);
+        meta.set_codec(NTruePrompter::NCodec::NProto::ECodec::PCM_F32LE);
+        return meta;
+    }
+
 private:
     int32_t SampleRate_;
 };
@@ -55,6 +65,10 @@ private:
 } // namespace
 
 namespace NTruePrompter::NCodec {
+
+bool IsMetaEquivalent(const NProto::TAudioMeta& l, const NProto::TAudioMeta& r) {
+    return std::tuple(l.codec(), l.format(), l.sample_rate()) == std::tuple(r.codec(), r.format(), r.sample_rate());
+}
 
 std::shared_ptr<IAudioEncoder> CreateEncoder(const NProto::TAudioMeta& meta) {
     if (meta.format() == NProto::EFormat::RAW) {

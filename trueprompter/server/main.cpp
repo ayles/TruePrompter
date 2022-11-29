@@ -37,8 +37,6 @@ public:
     std::optional<NTruePrompter::NCommon::NProto::TResponse> HandleMessage(const NTruePrompter::NCommon::NProto::TRequest& request) {
         SPDLOG_DEBUG("Client message received (client_id: \"{}\")", ClientId_);
 
-        std::optional<NTruePrompter::NCommon::NProto::TResponse> res;
-
         if (!Initialized_) {
             if (request.has_handshake()) {
                 ClientName_ = request.handshake().client_name();
@@ -90,15 +88,18 @@ public:
 
         if (request.has_audio_data()) {
             if (request.audio_data().has_meta()) {
-                Decoder_ = NTruePrompter::NCodec::CreateDecoder(request.audio_data().meta());
-                Decoder_->SetCallback([this](const float* data, size_t size) {
-                    if (!data || !size) {
-                        return;
-                    }
-                    Matcher_->AcceptWaveform(data, size, Decoder_->GetSampleRate());
-                    SPDLOG_DEBUG("Client audio decoded (client_id: \"{}\", samples: [{}, ...])", ClientId_, *data);
-                });
                 SPDLOG_DEBUG("Client audio meta set (client_id: \"{}\", audio_meta: {{ {} }})", ClientId_, request.audio_data().meta().ShortDebugString());
+                if (!Decoder_ || !NTruePrompter::NCodec::IsMetaEquivalent(request.audio_data().meta(), Decoder_->GetMeta())) {
+                    Decoder_ = NTruePrompter::NCodec::CreateDecoder(request.audio_data().meta());
+                    Decoder_->SetCallback([this](const float* data, size_t size) {
+                        if (!data || !size) {
+                            return;
+                        }
+                        Matcher_->AcceptWaveform(data, size, Decoder_->GetSampleRate());
+                        SPDLOG_DEBUG("Client audio decoded (client_id: \"{}\", samples: [{}, ...])", ClientId_, *data);
+                    });
+                    SPDLOG_DEBUG("Client decoder reset (client_id: \"{}\")", ClientId_);
+                }
             }
             if (!request.audio_data().data().empty()) {
                 if (!Decoder_) {
@@ -110,11 +111,12 @@ public:
                 // TODO async
                 NTruePrompter::NCommon::NProto::TResponse response;
                 response.mutable_recognition_result()->set_text_pos(Matcher_->GetCurrentPos());
-                res = response;
+                SPDLOG_DEBUG("Client sending recognition result (client_id: \"{}\", recognition_result: {{ {} }})", ClientId_, response.recognition_result().ShortDebugString());
+                return response;
             }
         }
 
-        return res;
+        return std::nullopt;
     }
 
 private:

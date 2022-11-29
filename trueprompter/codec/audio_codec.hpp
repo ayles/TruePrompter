@@ -55,7 +55,7 @@ public:
     virtual void Decode(const uint8_t* data, size_t size) = 0;
     virtual void Finalize() = 0;
     virtual int32_t GetSampleRate() const = 0;
-    virtual const NProto::TAudioMeta& GetMeta() const {
+    virtual NProto::TAudioMeta GetMeta() const {
         throw std::runtime_error("Not implemented");
     }
 
@@ -74,6 +74,8 @@ protected:
 private:
     std::function<void(const float* data, size_t size)> Callback_;
 };
+
+bool IsMetaEquivalent(const NProto::TAudioMeta& l, const NProto::TAudioMeta& r);
 
 std::shared_ptr<IAudioEncoder> CreateEncoder(const NProto::TAudioMeta& meta);
 std::shared_ptr<IAudioDecoder> CreateDecoder(const NProto::TAudioMeta& meta);

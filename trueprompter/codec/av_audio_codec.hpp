@@ -325,6 +325,10 @@ public:
         return Resampler_.dstSampleRate();
     }
 
+    NProto::TAudioMeta GetMeta() const override {
+        return Meta_;
+    }
+
     ~TAvAudioDecoder() override {
         Finalize();
         if (Worker_.joinable()) {
