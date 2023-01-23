@@ -192,6 +192,9 @@ public:
     }
 
     size_t GetCurrentPos() const {
+        if (PhonemeIndexToTextIndex_.empty()) {
+            return 0;
+        }
         size_t pos = PhonemesMatcher_->GetCurrentPos();
         if (pos >= PhonemeIndexToTextIndex_.size()) {
             return PhonemeIndexToTextIndex_.back() + 1;

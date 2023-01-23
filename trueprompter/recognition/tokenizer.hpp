@@ -15,7 +15,7 @@ public:
 
 class ITokenizerFactory {
 public:
-    virtual std::shared_ptr<ITokenizer> New() const = 0;
+    virtual std::shared_ptr<ITokenizer> New(const std::string& modelName) const = 0;
 };
 
 } // NTruePrompter::NRecognition

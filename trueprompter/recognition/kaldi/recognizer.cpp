@@ -105,24 +105,24 @@ private:
 
 class TKaldiRecognizerFactory : public NTruePrompter::NRecognition::IRecognizerFactory {
 public:
-    TKaldiRecognizerFactory(std::shared_ptr<NTruePrompter::NRecognition::TKaldiModel> model)
-        : Model_(std::move(model))
+    TKaldiRecognizerFactory(std::unordered_map<std::string, std::shared_ptr<NTruePrompter::NRecognition::TKaldiModel>> models)
+        : Models_(std::move(models))
     {}
 
-    std::shared_ptr<NTruePrompter::NRecognition::IRecognizer> New() const override {
-        return std::make_shared<TKaldiRecognizer>(Model_);
+    std::shared_ptr<NTruePrompter::NRecognition::IRecognizer> New(const std::string& modelName) const override {
+        return std::make_shared<TKaldiRecognizer>(Models_.at(modelName));
     }
 
 private:
-    std::shared_ptr<NTruePrompter::NRecognition::TKaldiModel> Model_;
+    std::unordered_map<std::string, std::shared_ptr<NTruePrompter::NRecognition::TKaldiModel>> Models_;
 };
 
 } // namespace
 
 namespace NTruePrompter::NRecognition {
 
-std::shared_ptr<IRecognizerFactory> NewKaldiRecognizerFactory(const std::shared_ptr<TKaldiModel>& model) {
-    return std::make_shared<TKaldiRecognizerFactory>(model);
+std::shared_ptr<IRecognizerFactory> NewKaldiRecognizerFactory(std::unordered_map<std::string, std::shared_ptr<TKaldiModel>> models) {
+    return std::make_shared<TKaldiRecognizerFactory>(std::move(models));
 }
 
 } // NTruePrompter::NRecognition

@@ -6,7 +6,7 @@
 namespace NTruePrompter::NRecognition {
 
 TKaldiModel::TKaldiModel(const std::filesystem::path& path)
-    : PhonetisaurusDecoder_(std::make_unique<PhonetisaurusScript>(path / "ru.fst"))
+    : PhonetisaurusDecoder_(std::make_unique<PhonetisaurusScript>(path / "g2p.fst"))
     , TransitionModel_(std::make_unique<kaldi::TransitionModel>())
     , NNet_(std::make_unique<kaldi::nnet3::AmNnetSimple>())
 {
@@ -57,7 +57,7 @@ TKaldiModel::TKaldiModel(const std::filesystem::path& path)
     kaldi::ReadIntegerVectorSimple(path / "graph/disambig_tid.int", &Disambig_);
     HCLG_.reset(fst::LookaheadComposeFst(*HCL_, *G_, Disambig_));
 
-    PhoneSyms_ = std::unique_ptr<fst::SymbolTable>(fst::SymbolTable::ReadText(path / "graph/phones.txt"));
+    PhoneSyms_ = std::unique_ptr<fst::SymbolTable>(fst::SymbolTable::ReadText(path / "phones.txt"));
 
     KaldiToPhonetisaurusPhoneMapping_ = MakeKaldiToPhonetisaurusPhoneMapping(*PhoneSyms_, *PhonetisaurusDecoder_->osyms_);
 }
@@ -71,8 +71,55 @@ std::vector<int64_t> TKaldiModel::Phoneticize(const std::string& word) const {
     return res;
 }
 
+class TKazakhKaldiModel : public NTruePrompter::NRecognition::TKaldiModel {
+public:
+    using NTruePrompter::NRecognition::TKaldiModel::TKaldiModel;
+
+    std::vector<int64_t> Phoneticize(const std::string& word) const override {
+        static const std::unordered_map<std::string, std::string> mapping {
+            { "Ә", "А", },
+            { "ә", "а", },
+            { "Ғ", "Г", },
+            { "ғ", "г", },
+            { "Қ", "К", },
+            { "қ", "к", },
+            { "Ң", "Н", },
+            { "ң", "н", },
+            { "Ө", "О", },
+            { "ө", "о", },
+            { "Ұ", "У", },
+            { "ұ", "у", },
+            { "Ү", "У", },
+            { "ү", "у", },
+            { "Һ", "Х", },
+            { "һ", "х", },
+            { "І", "И", },
+            { "і", "и", },
+        };
+
+        std::string newWord;
+
+        auto it = word.begin();
+        while (it != word.end()) {
+            auto prev = it;
+            utf8::next(it, word.end());
+            std::string ch(prev, it);
+            auto mit = mapping.find(ch);
+            if (mit != mapping.end()) {
+                newWord += mit->second;
+            } else {
+                newWord += ch;
+            }
+        }
+
+        return NTruePrompter::NRecognition::TKaldiModel::Phoneticize(newWord);
+    } 
+};
 
 std::shared_ptr<TKaldiModel> LoadKaldiModel(const std::filesystem::path& path) {
+    if (path.filename() == "ru+kz") {
+        return std::make_shared<TKazakhKaldiModel>(path.parent_path() / "ru");
+    }
     return std::make_shared<TKaldiModel>(path);
 }
 

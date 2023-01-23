@@ -17,19 +17,20 @@
 
 
 int main(int argc, char* argv[]) {
-    if (argc < 2 || argc > 3) {
-        std::cerr << "Usage: " << argv[0] << " <uri> [text_file]" << std::endl;
+    if (argc < 3 || argc > 4) {
+        std::cerr << "Usage: " << argv[0] << " <uri> <language> [text_file]" << std::endl;
         return -1;
     }
 
     std::stringstream buffer;
-    if (argc == 2) {
+    if (argc == 3) {
         buffer << std::cin.rdbuf();
     } else {
-        buffer << std::ifstream(argv[2]).rdbuf();
+        buffer << std::ifstream(argv[3]).rdbuf();
     }
 
     std::string uri = argv[1];
+    std::string language = argv[2];
     std::string text = buffer.str();
 
     // Init encoder
@@ -73,6 +74,7 @@ int main(int argc, char* argv[]) {
                 NTruePrompter::NCommon::NProto::TRequest initialMessage;
                 initialMessage.mutable_handshake()->set_client_name("trueprompter_client");
                 initialMessage.mutable_text_data()->set_text(text);
+                initialMessage.mutable_text_data()->set_language(language);
                 *initialMessage.mutable_audio_data()->mutable_meta() = encoder->GetMeta();
                 initialMessage.mutable_matcher_params()->mutable_look_ahead()->set_value(100);
                 client.send(hdl, initialMessage.SerializeAsString(), websocketpp::frame::opcode::value::binary);

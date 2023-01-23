@@ -1,7 +1,7 @@
-#include <trueprompter/recognition/matcher.hpp>
-#include <trueprompter/recognition/kaldi/kaldi.hpp>
 #include <trueprompter/codec/audio_codec.hpp>
 #include <trueprompter/common/proto/protocol.pb.h>
+#include <trueprompter/recognition/kaldi/kaldi.hpp>
+#include <trueprompter/recognition/matcher.hpp>
 
 #include <websocketpp/server.hpp>
 #include <websocketpp/config/asio.hpp>
@@ -10,10 +10,11 @@
 #include <spdlog/sinks/stdout_sinks.h>
 #include <spdlog/sinks/rotating_file_sink.h>
 
-#include <memory>
-#include <map>
 #include <cstdlib>
 #include <functional>
+#include <map>
+#include <memory>
+#include <optional>
 
 
 class TClientContext {
@@ -23,11 +24,10 @@ public:
     TClientContext& operator=(const TClientContext&) = delete;
     TClientContext& operator=(TClientContext&&) noexcept = delete;
 
-    TClientContext(const std::string& clientId, std::shared_ptr<NTruePrompter::NRecognition::IRecognizer> recognizer, std::shared_ptr<NTruePrompter::NRecognition::ITokenizer> tokenizer)
+    TClientContext(const std::string& clientId, std::shared_ptr<NTruePrompter::NRecognition::IRecognizerFactory> recognizerFactory, std::shared_ptr<NTruePrompter::NRecognition::ITokenizerFactory> tokenizerFactory)
         : ClientId_(clientId)
-        , Recognizer_(std::move(recognizer))
-        , Tokenizer_(std::move(tokenizer))
-        , Matcher_(std::make_shared<NTruePrompter::NRecognition::TWordsMatcher>("", Recognizer_, Tokenizer_))
+        , RecognizerFactory_(std::move(recognizerFactory))
+        , TokenizerFactory_(std::move(tokenizerFactory))
     {
         SPDLOG_INFO("Client connected (client_id: \"{}\")", ClientId_);
     }
@@ -52,15 +52,27 @@ public:
 
         if (request.has_text_data()) {
             // TODO do not recreate matcher and do not reset recognizer
+            if (!request.text_data().language().empty() && Language_ != request.text_data().language()) {
+                Language_ = request.text_data().language();
+                Recognizer_ = RecognizerFactory_->New(*Language_);
+                Tokenizer_ = TokenizerFactory_->New(*Language_);
+            }
+            if (!Language_.has_value()) {
+                throw std::runtime_error("No language was provided");
+            }
             Recognizer_->Reset();
-            auto params = Matcher_->GetMatchParameters();
+            auto params = Matcher_ ? Matcher_->GetMatchParameters() : NTruePrompter::NRecognition::TPhonemesMatcher::TMatchParameters();
             Matcher_ = std::make_shared<NTruePrompter::NRecognition::TWordsMatcher>(request.text_data().text(), Recognizer_, Tokenizer_);
             Matcher_->SetCurrentPos(request.text_data().text_pos());
             Matcher_->SetMatchParameters(params);
             SPDLOG_DEBUG("Client text data provided (client_id: \"{}\", text_data: {{ {} }})", ClientId_, request.text_data().ShortDebugString());
         }
 
-        if (request.has_matcher_params()) {
+        if (!Language_.has_value()) {
+            throw std::runtime_error("No language was provided");
+        }
+
+        if (request.has_matcher_params()) { 
             // TODO rework parsing
             NTruePrompter::NRecognition::TPhonemesMatcher::TMatchParameters params;
             if (request.matcher_params().has_look_ahead()) {
@@ -125,10 +137,13 @@ private:
     bool Initialized_ = false;
     std::string ClientId_;
     std::string ClientName_;
+    std::shared_ptr<NTruePrompter::NRecognition::IRecognizerFactory> RecognizerFactory_;
+    std::shared_ptr<NTruePrompter::NRecognition::ITokenizerFactory> TokenizerFactory_;
     std::shared_ptr<NTruePrompter::NRecognition::IRecognizer> Recognizer_;
     std::shared_ptr<NTruePrompter::NRecognition::ITokenizer> Tokenizer_;
     std::shared_ptr<NTruePrompter::NRecognition::TWordsMatcher> Matcher_;
     std::shared_ptr<NTruePrompter::NCodec::IAudioDecoder> Decoder_;
+    std::optional<std::string> Language_;
 };
 
 class TTruePrompterServer {
@@ -149,7 +164,7 @@ public:
             server.init_asio();
 
             server.set_open_handler([&server, this](websocketpp::connection_hdl hdl) {
-                Clients_.emplace(hdl, std::make_shared<TClientContext>(server.get_con_from_hdl(hdl)->get_remote_endpoint(), RecognizerFactory_->New(), TokenizerFactory_->New()));
+                Clients_.emplace(hdl, std::make_shared<TClientContext>(server.get_con_from_hdl(hdl)->get_remote_endpoint(), RecognizerFactory_, TokenizerFactory_));
             });
 
             server.set_close_handler([this](websocketpp::connection_hdl hdl) {
@@ -214,7 +229,7 @@ private:
 
 int main(int argc, char* argv[]) {
     if (argc < 3) {
-        std::cerr << "Expected <port> <model_path> [<info_log_file> [<debug_log_file>]]" << std::endl;
+        std::cerr << "Expected <port> <models_folder> [<info_log_file> [<debug_log_file>]]" << std::endl;
         return -1;
     }
 
@@ -244,9 +259,19 @@ int main(int argc, char* argv[]) {
     }
 
     SPDLOG_INFO("Initializing..");
-    auto kaldiModel = NTruePrompter::NRecognition::LoadKaldiModel(argv[2]);
-    auto kaldiRecognizerFactory = NTruePrompter::NRecognition::NewKaldiRecognizerFactory(kaldiModel);
-    auto kaldiTokenizerFactory = NTruePrompter::NRecognition::NewKaldiTokenizerFactory(kaldiModel);
+
+    std::unordered_map<std::string, std::shared_ptr<NTruePrompter::NRecognition::TKaldiModel>> models;
+    for (auto& entry : std::filesystem::directory_iterator(argv[2])) {
+        if (entry.is_directory()) {
+            models[entry.path().filename()] = NTruePrompter::NRecognition::LoadKaldiModel(entry.path());
+            if (entry.path().filename() == "ru") {
+                models["ru+kz"] = NTruePrompter::NRecognition::LoadKaldiModel(entry.path().parent_path() / "ru+kz");
+            }
+        }
+    }
+
+    auto kaldiRecognizerFactory = NTruePrompter::NRecognition::NewKaldiRecognizerFactory(models);
+    auto kaldiTokenizerFactory = NTruePrompter::NRecognition::NewKaldiTokenizerFactory(models);
     TTruePrompterServer server(kaldiRecognizerFactory, kaldiTokenizerFactory);
     SPDLOG_INFO("Started");
     server.Run(std::atoi(argv[1]));

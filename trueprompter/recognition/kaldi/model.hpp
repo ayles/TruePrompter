@@ -28,6 +28,7 @@ namespace NTruePrompter::NRecognition {
 class TKaldiModel {
 public:
     TKaldiModel(const std::filesystem::path& path);
+    virtual ~TKaldiModel() = default;
 
     PhonetisaurusScript& GetPhonetisaurusDecoder() const {
         return *PhonetisaurusDecoder_;
@@ -53,7 +54,7 @@ public:
         return std::nullopt;
     }
 
-    std::vector<int64_t> Phoneticize(const std::string& word) const;
+    virtual std::vector<int64_t> Phoneticize(const std::string& word) const;
 
     std::unique_ptr<kaldi::OnlineSilenceWeighting> CreateSilenceWeighting() const {
         return std::make_unique<kaldi::OnlineSilenceWeighting>(*TransitionModel_, FeatureInfo_.silence_weighting_config, 3);

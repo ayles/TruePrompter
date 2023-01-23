@@ -74,24 +74,27 @@ private:
 
 class TKaldiTokenizerFactory : public NTruePrompter::NRecognition::ITokenizerFactory {
 public:
-    TKaldiTokenizerFactory(std::shared_ptr<NTruePrompter::NRecognition::TKaldiModel> model) 
-        : Tokenizer_(std::make_shared<TKaldiTokenizer>(std::move(model)))
-    {}
+    TKaldiTokenizerFactory(std::unordered_map<std::string, std::shared_ptr<NTruePrompter::NRecognition::TKaldiModel>> models) 
+    {
+        for (auto& [modelName, model] : models) {
+            Tokenizers_[modelName] = std::make_shared<TKaldiTokenizer>(std::move(model));
+        }
+    }
 
-    std::shared_ptr<NTruePrompter::NRecognition::ITokenizer> New() const {
-        return Tokenizer_;
+    std::shared_ptr<NTruePrompter::NRecognition::ITokenizer> New(const std::string& modelName) const {
+        return Tokenizers_.at(modelName);
     }
 
 private:
-    std::shared_ptr<TKaldiTokenizer> Tokenizer_;
+    std::unordered_map<std::string, std::shared_ptr<TKaldiTokenizer>> Tokenizers_;
 };
 
 } // namespace
 
 namespace NTruePrompter::NRecognition {
 
-std::shared_ptr<ITokenizerFactory> NewKaldiTokenizerFactory(const std::shared_ptr<TKaldiModel>& model) {
-    return std::make_shared<TKaldiTokenizerFactory>(model);
+std::shared_ptr<ITokenizerFactory> NewKaldiTokenizerFactory(std::unordered_map<std::string, std::shared_ptr<TKaldiModel>> models) {
+    return std::make_shared<TKaldiTokenizerFactory>(std::move(models));
 }
 
 } // namespace NTruePrompter::NRecognition

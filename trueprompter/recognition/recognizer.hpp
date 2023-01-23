@@ -1,6 +1,7 @@
 #pragma once
 
 #include <memory>
+#include <string>
 #include <vector>
 #include <version>
 
@@ -15,7 +16,7 @@ public:
 
 class IRecognizerFactory {
 public:
-    virtual std::shared_ptr<IRecognizer> New() const = 0;
+    virtual std::shared_ptr<IRecognizer> New(const std::string& modelName) const = 0;
 };
 
 } // NTruePrompter::NRecognition
