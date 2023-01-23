@@ -9,3 +9,4 @@ target_link_libraries(trueprompter_server
     websocketpp_complete
     spdlog
 )
+

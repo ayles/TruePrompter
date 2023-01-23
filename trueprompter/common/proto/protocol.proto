@@ -26,6 +26,11 @@ message TRequest {
          * Unset means start from beginning
          */
         uint64 text_pos = 2;
+
+        /**
+         * Language to do recognition for
+         */
+        string language = 3;
     }
 
     message TAudioData {

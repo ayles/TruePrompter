@@ -1,28 +1,22 @@
 #pragma once
 
-#include <cstddef>
-#include <vector>
-#include <tuple>
-#include <filesystem>
-#include <string>
 #include <memory>
+#include <vector>
+#include <version>
 
 
 namespace NTruePrompter::NRecognition {
 
 class IRecognizer {
 public:
-    virtual bool AcceptWaveform(const float* data, size_t dataSize, int32_t sampleRate) = 0;
+    virtual bool Update(const float* data, size_t dataSize, int32_t sampleRate, std::vector<int64_t>* tokensOut) = 0;
     virtual void Reset() = 0;
-    virtual std::vector<int64_t> GetPhones() const = 0;
-    virtual std::tuple<std::vector<int64_t>, std::vector<size_t>> MapToPhones(const std::string& text) const = 0;
 };
 
 class IRecognizerFactory {
 public:
-    virtual std::shared_ptr<IRecognizer> Create() const = 0;
+    virtual std::shared_ptr<IRecognizer> New() const = 0;
 };
 
-std::shared_ptr<IRecognizerFactory> CreateRecognizerFactory(const std::filesystem::path& path);
+} // NTruePrompter::NRecognition
 
-} // namespace NTruePrompter::NRecognition

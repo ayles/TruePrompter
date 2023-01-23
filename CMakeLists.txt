@@ -12,6 +12,7 @@ set(BOOST_STATIC ON)
 set(Boost_USE_STATIC_LIBS ON)
 set(Protobuf_USE_STATIC_LIBS ON)
 set(OPENSSL_USE_STATIC_LIBS ON)
+set(onnxruntime_BUILD_SHARED_LIB ON)
 
 # Do not disable logging in compile time
 add_definitions(-DSPDLOG_ACTIVE_LEVEL=0)
@@ -29,6 +30,7 @@ add_subdirectory(deps/spdlog)
 add_subdirectory(deps/utfcpp)
 add_subdirectory(deps/portaudio)
 add_subdirectory(deps/avcpp)
+add_subdirectory(deps/onnxruntime/cmake)
 add_subdirectory(deps/kaldi)
 add_subdirectory(cmake/phonetisaurus)
 
@@ -36,3 +38,4 @@ add_library(websocketpp_complete INTERFACE)
 target_link_libraries(websocketpp_complete INTERFACE websocketpp::websocketpp OpenSSL::SSL OpenSSL::Crypto Boost::headers)
 
 add_subdirectory(trueprompter)
+

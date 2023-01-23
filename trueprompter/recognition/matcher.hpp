@@ -2,12 +2,12 @@
 
 #include "smith_waterman.hpp"
 #include "recognizer.hpp"
+#include "tokenizer.hpp"
 
 #include <vector>
 #include <string>
 #include <memory>
 #include <optional>
-#include <span>
 
 
 namespace NTruePrompter::NRecognition {
@@ -126,19 +126,23 @@ private:
 
 class TWordsMatcher {
 public:
-    TWordsMatcher(const std::string& text, std::shared_ptr<IRecognizer> recognizer)
+    TWordsMatcher(const std::string& text, std::shared_ptr<IRecognizer> recognizer, std::shared_ptr<ITokenizer> tokenizer)
         : Recognizer_(std::move(recognizer))
+        , Tokenizer_(std::move(tokenizer))
         , SpeechPhonemesBuffer_(std::make_unique<TSpeechPhonemesBuffer>())
     {
-        auto [phones, phoneToWord] = Recognizer_->MapToPhones(text);
+        std::vector<int64_t> phones;
+        std::vector<size_t> phoneToWord;
+        Tokenizer_->Apply(text, &phones, &phoneToWord);
 
         PhonemesMatcher_ = std::make_unique<TPhonemesMatcher>(std::move(phones));
         PhonemeIndexToTextIndex_ = std::move(phoneToWord);
     }
 
     void AcceptWaveform(const float* data, size_t dataSize, int32_t sampleRate) {
-        bool shouldCommit = Recognizer_->AcceptWaveform(data, dataSize, sampleRate);
-        SpeechPhonemesBuffer_->Update(Recognizer_->GetPhones());
+        std::vector<int64_t> phonemes;
+        bool shouldCommit = Recognizer_->Update(data, dataSize, sampleRate, &phonemes);
+        SpeechPhonemesBuffer_->Update(phonemes);
 
         TPhonemesMatcher::TMatchParameters matchParameters = MatchParameters_;
         if (matchParameters.LookAhead) {
@@ -207,6 +211,7 @@ private:
     TPhonemesMatcher::TMatchParameters MatchParameters_;
 
     std::shared_ptr<IRecognizer> Recognizer_;
+    std::shared_ptr<ITokenizer> Tokenizer_;
 
     std::unique_ptr<TSpeechPhonemesBuffer> SpeechPhonemesBuffer_;
     std::unique_ptr<TPhonemesMatcher> PhonemesMatcher_;

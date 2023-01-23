@@ -34,9 +34,9 @@ int main(int argc, char* argv[]) {
 
     // Init encoder
     NTruePrompter::NCodec::NProto::TAudioMeta meta;
-    meta.set_format(NTruePrompter::NCodec::NProto::EFormat::OGG);
-    meta.set_codec(NTruePrompter::NCodec::NProto::ECodec::OPUS);
-    meta.set_sample_rate(48000);
+    meta.set_format(NTruePrompter::NCodec::NProto::EFormat::RAW);
+    meta.set_codec(NTruePrompter::NCodec::NProto::ECodec::PCM_F32LE);
+    meta.set_sample_rate(16000);
     auto encoder = NTruePrompter::NCodec::CreateEncoder(meta);
 
     // Init audio input

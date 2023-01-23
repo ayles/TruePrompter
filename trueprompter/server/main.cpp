@@ -1,4 +1,6 @@
 #include <trueprompter/recognition/matcher.hpp>
+#include <trueprompter/recognition/kaldi/kaldi.hpp>
+#include <trueprompter/recognition/onnx/onnx.hpp>
 #include <trueprompter/codec/audio_codec.hpp>
 #include <trueprompter/common/proto/protocol.pb.h>
 
@@ -22,10 +24,11 @@ public:
     TClientContext& operator=(const TClientContext&) = delete;
     TClientContext& operator=(TClientContext&&) noexcept = delete;
 
-    TClientContext(std::shared_ptr<NTruePrompter::NRecognition::IRecognizer> recognizer, const std::string& clientId)
+    TClientContext(const std::string& clientId, std::shared_ptr<NTruePrompter::NRecognition::IRecognizer> recognizer, std::shared_ptr<NTruePrompter::NRecognition::ITokenizer> tokenizer)
         : ClientId_(clientId)
         , Recognizer_(std::move(recognizer))
-        , Matcher_(std::make_shared<NTruePrompter::NRecognition::TWordsMatcher>("", Recognizer_))
+        , Tokenizer_(std::move(tokenizer))
+        , Matcher_(std::make_shared<NTruePrompter::NRecognition::TWordsMatcher>("", Recognizer_, Tokenizer_))
     {
         SPDLOG_INFO("Client connected (client_id: \"{}\")", ClientId_);
     }
@@ -52,7 +55,7 @@ public:
             // TODO do not recreate matcher and do not reset recognizer
             Recognizer_->Reset();
             auto params = Matcher_->GetMatchParameters();
-            Matcher_ = std::make_shared<NTruePrompter::NRecognition::TWordsMatcher>(request.text_data().text(), Recognizer_);
+            Matcher_ = std::make_shared<NTruePrompter::NRecognition::TWordsMatcher>(request.text_data().text(), Recognizer_, Tokenizer_);
             Matcher_->SetCurrentPos(request.text_data().text_pos());
             Matcher_->SetMatchParameters(params);
             SPDLOG_DEBUG("Client text data provided (client_id: \"{}\", text_data: {{ {} }})", ClientId_, request.text_data().ShortDebugString());
@@ -124,6 +127,7 @@ private:
     std::string ClientId_;
     std::string ClientName_;
     std::shared_ptr<NTruePrompter::NRecognition::IRecognizer> Recognizer_;
+    std::shared_ptr<NTruePrompter::NRecognition::ITokenizer> Tokenizer_;
     std::shared_ptr<NTruePrompter::NRecognition::TWordsMatcher> Matcher_;
     std::shared_ptr<NTruePrompter::NCodec::IAudioDecoder> Decoder_;
 };
@@ -132,8 +136,9 @@ class TTruePrompterServer {
 public:
     using TWebSocketServer = websocketpp::server<websocketpp::config::asio>;
 
-    TTruePrompterServer(const std::shared_ptr<NTruePrompter::NRecognition::IRecognizerFactory>& recognizerFactory)
+    TTruePrompterServer(const std::shared_ptr<NTruePrompter::NRecognition::IRecognizerFactory>& recognizerFactory, const std::shared_ptr<NTruePrompter::NRecognition::ITokenizerFactory>& tokenizerFactory)
         : RecognizerFactory_(recognizerFactory)
+        , TokenizerFactory_(tokenizerFactory)
     {}
 
     void Run(uint16_t port) {
@@ -145,7 +150,7 @@ public:
             server.init_asio();
 
             server.set_open_handler([&server, this](websocketpp::connection_hdl hdl) {
-                Clients_.emplace(hdl, std::make_shared<TClientContext>(RecognizerFactory_->Create(), server.get_con_from_hdl(hdl)->get_remote_endpoint()));
+                Clients_.emplace(hdl, std::make_shared<TClientContext>(server.get_con_from_hdl(hdl)->get_remote_endpoint(), RecognizerFactory_->New(), TokenizerFactory_->New()));
             });
 
             server.set_close_handler([this](websocketpp::connection_hdl hdl) {
@@ -204,6 +209,7 @@ public:
 
 private:
     std::shared_ptr<NTruePrompter::NRecognition::IRecognizerFactory> RecognizerFactory_;
+    std::shared_ptr<NTruePrompter::NRecognition::ITokenizerFactory> TokenizerFactory_;
     std::map<websocketpp::connection_hdl, std::shared_ptr<TClientContext>, std::owner_less<websocketpp::connection_hdl>> Clients_;
 };
 
@@ -239,7 +245,11 @@ int main(int argc, char* argv[]) {
     }
 
     SPDLOG_INFO("Initializing..");
-    TTruePrompterServer server(NTruePrompter::NRecognition::CreateRecognizerFactory(argv[2]));
+    auto kaldiModel = NTruePrompter::NRecognition::LoadKaldiModel(argv[2]);
+    //auto kaldiRecognizerFactory = NTruePrompter::NRecognition::NewKaldiRecognizerFactory(kaldiModel);
+    auto kaldiRecognizerFactory = std::make_shared<NTruePrompter::NRecognition::TOnnxRecognizerFactory>("../wav2vec2.onnx");
+    auto kaldiTokenizerFactory = NTruePrompter::NRecognition::NewKaldiTokenizerFactory(kaldiModel);
+    TTruePrompterServer server(kaldiRecognizerFactory, kaldiTokenizerFactory);
     SPDLOG_INFO("Started");
     server.Run(std::atoi(argv[1]));
 }
