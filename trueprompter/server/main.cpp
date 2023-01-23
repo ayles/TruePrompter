@@ -1,6 +1,5 @@
 #include <trueprompter/recognition/matcher.hpp>
 #include <trueprompter/recognition/kaldi/kaldi.hpp>
-#include <trueprompter/recognition/onnx/onnx.hpp>
 #include <trueprompter/codec/audio_codec.hpp>
 #include <trueprompter/common/proto/protocol.pb.h>
 
@@ -246,8 +245,7 @@ int main(int argc, char* argv[]) {
 
     SPDLOG_INFO("Initializing..");
     auto kaldiModel = NTruePrompter::NRecognition::LoadKaldiModel(argv[2]);
-    //auto kaldiRecognizerFactory = NTruePrompter::NRecognition::NewKaldiRecognizerFactory(kaldiModel);
-    auto kaldiRecognizerFactory = std::make_shared<NTruePrompter::NRecognition::TOnnxRecognizerFactory>("../wav2vec2.onnx");
+    auto kaldiRecognizerFactory = NTruePrompter::NRecognition::NewKaldiRecognizerFactory(kaldiModel);
     auto kaldiTokenizerFactory = NTruePrompter::NRecognition::NewKaldiTokenizerFactory(kaldiModel);
     TTruePrompterServer server(kaldiRecognizerFactory, kaldiTokenizerFactory);
     SPDLOG_INFO("Started");

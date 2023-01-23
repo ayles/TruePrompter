@@ -1,6 +1,7 @@
 # Unfortunately, alpine is too hard to get build working on
 # Probably should try to build on ubuntu and run on alpine later
-FROM ubuntu:22.04 as builder
+# Note: not using LTS here cause of cmake - 22.10 has 3.24 and it is required for this project
+FROM ubuntu:22.10 as builder
 ENV DEBIAN_FRONTEND noninteractive
 RUN apt update
 RUN apt install -y git clang ninja-build cmake pkg-config \

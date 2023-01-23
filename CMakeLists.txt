@@ -4,15 +4,17 @@ project(TruePrompter)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-set(KALDI_BUILD_EXE OFF CACHE BOOL "Disable Kaldi exe")
-set(KALDI_BUILD_TESTS OFF CACHE BOOL "Disable Kaldi tests")
-set(BUILD_SHARED_LIBS OFF CACHE BOOL "Build static")
+set(KALDI_BUILD_EXE OFF CACHE BOOL "Disable Kaldi exe" FORCE)
+set(KALDI_BUILD_TESTS OFF CACHE BOOL "Disable Kaldi tests" FORCE)
+set(BUILD_SHARED_LIBS OFF CACHE BOOL "Build static" FORCE)
+set(FLATBUFFERS_BUILD_FLATC OFF CACHE BOOL "FLATBUFFERS_BUILD_FLATC" FORCE)
 
 set(BOOST_STATIC ON)
 set(Boost_USE_STATIC_LIBS ON)
 set(Protobuf_USE_STATIC_LIBS ON)
 set(OPENSSL_USE_STATIC_LIBS ON)
 set(onnxruntime_BUILD_SHARED_LIB ON)
+set(onnxruntime_BUILD_UNIT_TESTS OFF)
 
 # Do not disable logging in compile time
 add_definitions(-DSPDLOG_ACTIVE_LEVEL=0)

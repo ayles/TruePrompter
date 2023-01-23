@@ -33,15 +33,15 @@ add_library(trueprompter_recognition
     recognizer.hpp
     smith_waterman.hpp
     tokenizer.hpp
-    onnx/onnx.hpp
-    onnx/onnx.cpp
+    # onnx/onnx.hpp
+    # onnx/onnx.cpp
 )
 
 target_include_directories(trueprompter_recognition PUBLIC ${CMAKE_SOURCE_DIR})
 
 target_link_libraries(trueprompter_recognition
     trueprompter_recognition_cxx17
-    onnxruntime
+    # onnxruntime
 )
 
 target_include_directories(trueprompter_recognition PUBLIC ${CMAKE_SOURCE_DIR}/deps/onnxruntime/include)
