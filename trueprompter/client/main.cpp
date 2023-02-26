@@ -1,6 +1,5 @@
 #include "audio_source.hpp"
 
-#include <trueprompter/codec/audio_codec.hpp>
 #include <trueprompter/common/proto/protocol.pb.h>
 
 #include <utf8.h>
@@ -38,10 +37,9 @@ int main(int argc, char* argv[]) {
     meta.set_format(NTruePrompter::NCodec::NProto::EFormat::RAW);
     meta.set_codec(NTruePrompter::NCodec::NProto::ECodec::PCM_F32LE);
     meta.set_sample_rate(16000);
-    auto encoder = NTruePrompter::NCodec::CreateEncoder(meta);
 
     // Init audio input
-    auto audioSource = NTruePrompter::NAudioSource::MakeMicrophoneAudioSource(encoder->GetSampleRate());
+    auto audioSource = NTruePrompter::NAudioSource::MakeMicrophoneAudioSource(16000);
 
     /*{
         std::ofstream f("out.ogg");
@@ -75,7 +73,7 @@ int main(int argc, char* argv[]) {
                 initialMessage.mutable_handshake()->set_client_name("trueprompter_client");
                 initialMessage.mutable_text_data()->set_text(text);
                 initialMessage.mutable_text_data()->set_language(language);
-                *initialMessage.mutable_audio_data()->mutable_meta() = encoder->GetMeta();
+                *initialMessage.mutable_audio_data()->mutable_meta() = meta;
                 initialMessage.mutable_matcher_params()->mutable_look_ahead()->set_value(100);
                 client.send(hdl, initialMessage.SerializeAsString(), websocketpp::frame::opcode::value::binary);
             }
@@ -87,10 +85,7 @@ int main(int argc, char* argv[]) {
 
                 NTruePrompter::NCommon::NProto::TRequest request;
                 size_t samples = audioSource->Read(audioBuffer.data(), audioBuffer.size());
-                encoder->SetCallback([&request](const uint8_t* data, size_t size) {
-                    request.mutable_audio_data()->mutable_data()->insert(request.mutable_audio_data()->mutable_data()->end(), data, data + size);
-                });
-                encoder->Encode(audioBuffer.data(), samples);
+                request.mutable_audio_data()->mutable_data()->insert(request.mutable_audio_data()->mutable_data()->end(), reinterpret_cast<char*>(audioBuffer.data()), reinterpret_cast<char*>(audioBuffer.data()) + samples * sizeof(float));
 
                 client.send(hdl, request.SerializeAsString(), websocketpp::frame::opcode::value::binary);
             }

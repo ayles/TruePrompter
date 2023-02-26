@@ -1,224 +1,146 @@
 #pragma once
 
-#include "smith_waterman.hpp"
-#include "recognizer.hpp"
-#include "tokenizer.hpp"
+#include <Eigen/Dense>
 
+#include <span>
 #include <vector>
-#include <string>
-#include <memory>
-#include <optional>
-
+#include <iostream>
 
 namespace NTruePrompter::NRecognition {
 
-class TSpeechPhonemesBuffer {
+class IMatcher {
 public:
-    explicit TSpeechPhonemesBuffer(size_t fitThreshold = 150)
-        : FitThreshold_(fitThreshold)
-    {}
+    using TPoint = std::tuple<Eigen::Index, Eigen::Index>;
+    using TPath = std::vector<TPoint>;
 
-    void Update(const std::span<const int64_t>& phonemes) {
-        Phonemes_.resize(CommittedPos_);
-        Phonemes_.insert(Phonemes_.end(), phonemes.begin(), phonemes.end());
-        MatchedPos_ = std::min<size_t>(MatchedPos_, Phonemes_.size());
-    }
-
-    void Commit() {
-        CommittedPos_ = Phonemes_.size();
-        Fit();
-    }
-
-    std::span<const int64_t> GetUnmatched() const {
-        return std::span<const int64_t>(Phonemes_.data() + MatchedPos_, Phonemes_.size() - MatchedPos_);
-    }
-
-    void Match(size_t count) {
-        MatchedPos_ = std::min<size_t>(MatchedPos_ + count, Phonemes_.size());
-        Fit();
-    }
-
-    void Reset() {
-        Phonemes_.clear();
-        CommittedPos_ = 0;
-        MatchedPos_ = 0;
-    }
-
-private:
-    void Fit() {
-        size_t count = std::min<size_t>(CommittedPos_, MatchedPos_);
-        if (count < FitThreshold_) {
-            return;
-        }
-        Phonemes_.erase(Phonemes_.begin(), Phonemes_.begin() + count);
-        CommittedPos_ -= count;
-        MatchedPos_ -= count;
-    }
-
-private:
-    const size_t FitThreshold_;
-    std::vector<int64_t> Phonemes_;
-    size_t CommittedPos_ = 0;
-    size_t MatchedPos_ = 0;
+    virtual std::tuple<std::span<const int64_t>, float> Update(Eigen::Map<const Eigen::MatrixXf> emissions, std::span<const int64_t> tokens, int64_t blankTokenIndex) = 0;
+    virtual ~IMatcher() = default;
 };
 
-class TPhonemesMatcher {
+class TDefaultMatcher : public IMatcher {
 public:
-    struct TMatchParameters {
-        std::optional<size_t> LookAhead;
-        double FadeOverLookAhead = 0.3;
-        double SimilarScore = 1.0;
-        double DifferentScore = -1.0;
-        double SourceSkipWeight = -1.0;
-        double TargetSkipWeight = -1.0;
-        double MinMatchWeight = 3.0;
+    enum class EMode {
+        Default,
+        WeightedPhonemes,
     };
 
-    explicit TPhonemesMatcher(std::vector<int64_t> phonemes)
-        : Phonemes_(std::move(phonemes))
-    {
-    }
+    TDefaultMatcher(EMode mode)
+        : Mode_(mode)
+    {}
 
-    void Match(TSpeechPhonemesBuffer& speechPhonemesBuffer, const TMatchParameters& matchParameters) {
-        auto speechPhonemes = speechPhonemesBuffer.GetUnmatched();
-        auto phonemes = std::span<const int64_t>(Phonemes_.data() + CurrentPos_, std::min<size_t>(Phonemes_.size() - CurrentPos_, matchParameters.LookAhead.value_or((size_t)-1)));
+    std::tuple<std::span<const int64_t>, float> Update(Eigen::Map<const Eigen::MatrixXf> emissions, std::span<const int64_t> tokens, int64_t blankTokenIndex) override {
+        auto [trellis, backtrack] = ConstructTrellis(emissions, tokens, blankTokenIndex);
+        auto path = DoBacktrack(trellis, backtrack, tokens, blankTokenIndex);
 
-        // Slightly decrease weight at the end of lookahead window - prioritize closer matches
-        auto weightMultiplier = [&phonemes, &matchParameters](const int64_t* targetPos) {
-            return 1.0 - matchParameters.FadeOverLookAhead * (double)(targetPos - phonemes.data()) / (double)phonemes.size();
-        };
+        double sum = 0.0;
+        size_t count = 0;
+        double prevValue = 0.0;
 
-        // TODO match last N speech phonemes
-        const auto [speechPhonemesMatched, phonemesMatched, score] = SmithWaterman<const int64_t, double>(
-            speechPhonemes,
-            phonemes,
-            [&weightMultiplier, &matchParameters](const int64_t*, const int64_t* targetPos) {
-                return matchParameters.SourceSkipWeight * weightMultiplier(targetPos);
-            },
-            [&weightMultiplier, &matchParameters](const int64_t*, const int64_t* targetPos) {
-                return matchParameters.TargetSkipWeight * weightMultiplier(targetPos);
-            },
-            [&weightMultiplier, &matchParameters](const int64_t* sourcePos, const int64_t* targetPos) {
-                return (*sourcePos == *targetPos ? matchParameters.SimilarScore : matchParameters.DifferentScore) * weightMultiplier(targetPos);
+        if (Mode_ == EMode::Default) {
+            for (auto& [row, col] : path) {
+                double currValue = trellis(row + 1, col + 1);
+                sum += currValue - prevValue;
+                prevValue = currValue;
+                count++;
             }
-        );
-
-        if (score < matchParameters.MinMatchWeight) {
-            return;
+        } else if (Mode_ == EMode::WeightedPhonemes) {
+            auto it = path.begin();
+            while (it != path.end()) {
+                auto nextIt = std::find_if(it, path.end(), [&](const auto& point) {
+                    return std::get<0>(point) != std::get<0>(*it);
+                });
+                auto beforeIt = std::prev(nextIt);
+                double currentValue = trellis(std::get<0>(*beforeIt) + 1, std::get<1>(*beforeIt) + 1);
+                sum += (currentValue - prevValue) / (nextIt - it);
+                count++;
+                prevValue = currentValue;
+                it = nextIt;
+            }
+        } else {
+            throw std::runtime_error("Unsupported mode");
         }
 
-        speechPhonemesBuffer.Match(speechPhonemesMatched.end() - speechPhonemes.begin());
-        CurrentPos_ += phonemesMatched.end() - phonemes.begin();
+        return { tokens, std::exp(sum / count) };
     }
 
-    size_t GetCurrentPos() const {
-        return CurrentPos_;
-    }
-
-    void SetCurrentPos(size_t pos) {
-        CurrentPos_ = std::min<size_t>(pos, Phonemes_.size());
-    }
-
-private:
-    std::vector<int64_t> Phonemes_;
-    size_t CurrentPos_ = 0;
-};
-
-class TWordsMatcher {
 public:
-    TWordsMatcher(const std::string& text, std::shared_ptr<IRecognizer> recognizer, std::shared_ptr<ITokenizer> tokenizer)
-        : Recognizer_(std::move(recognizer))
-        , Tokenizer_(std::move(tokenizer))
-        , SpeechPhonemesBuffer_(std::make_unique<TSpeechPhonemesBuffer>())
-    {
-        std::vector<int64_t> phones;
-        std::vector<size_t> phoneToWord;
-        Tokenizer_->Apply(text, &phones, &phoneToWord);
+    // https://pytorch.org/audio/stable/tutorials/forced_alignment_tutorial.html
+    static std::tuple<Eigen::MatrixXf, Eigen::MatrixXi> ConstructTrellis(const Eigen::Map<const Eigen::MatrixXf>& emission, std::span<const int64_t> tokens, int64_t blankTokenIndex) {
+        for (int64_t token : tokens) {
+            if (token < 0 || token >= emission.rows()) {
+                throw std::runtime_error("Invalid token (token: " + std::to_string(token) + ")");
+            }
+        }
 
-        PhonemesMatcher_ = std::make_unique<TPhonemesMatcher>(std::move(phones));
-        PhonemeIndexToTextIndex_ = std::move(phoneToWord);
-    }
+        const size_t framesCount = emission.cols();
+        const size_t tokensCount = tokens.size();
 
-    void AcceptWaveform(const float* data, size_t dataSize, int32_t sampleRate) {
-        std::vector<int64_t> phonemes;
-        bool shouldCommit = Recognizer_->Update(data, dataSize, sampleRate, &phonemes);
-        SpeechPhonemesBuffer_->Update(phonemes);
+        // Zero row is for start of sentence acc
+        // Zero column is for simplification of the code
+        Eigen::MatrixXf trellis = Eigen::MatrixXf::Zero(tokensCount + 1, framesCount + 1);
+        Eigen::MatrixXi backtrack = Eigen::MatrixXi::Zero(tokensCount + 1, framesCount + 1);
 
-        TPhonemesMatcher::TMatchParameters matchParameters = MatchParameters_;
-        if (matchParameters.LookAhead) {
-            size_t currentPos = PhonemesMatcher_->GetCurrentPos();
-            if (currentPos < PhonemeIndexToTextIndex_.size()) {
-                auto it = std::upper_bound(
-                    PhonemeIndexToTextIndex_.begin() + currentPos,
-                    PhonemeIndexToTextIndex_.end(),
-                    PhonemeIndexToTextIndex_[currentPos] + matchParameters.LookAhead.value()
-                );
-                if (it != PhonemeIndexToTextIndex_.end()) {
-                    // Convert N-characters to N-phonemes lookahead
-                    matchParameters.LookAhead = it - (PhonemeIndexToTextIndex_.begin() + currentPos);
+        trellis.block(1, 0, tokensCount, 1).setConstant(-std::numeric_limits<float>::infinity());
+        trellis.block(0, trellis.cols() - tokensCount, 1, tokensCount).setConstant(std::numeric_limits<float>::infinity());
+
+        for (size_t t = 0; t < framesCount; ++t) {
+            for (size_t i = 0; i < tokensCount; ++i) {
+                float stayScore = trellis(i + 1, t) + std::log(std::exp(emission(tokens[i], t)) + std::exp(emission(blankTokenIndex, t)));
+                float changeScore = trellis(i, t) + emission(tokens[i], t);
+
+                if (stayScore > changeScore) {
+                    trellis(i + 1, t + 1) = stayScore;
+                    backtrack(i + 1, t + 1) = 0;
+                } else {
+                    trellis(i + 1, t + 1) = changeScore;
+                    backtrack(i + 1, t + 1) = -1;
                 }
             }
         }
 
-        PhonemesMatcher_->Match(*SpeechPhonemesBuffer_, matchParameters);
-
-        if (shouldCommit) {
-            SpeechPhonemesBuffer_->Commit();
-        }
+        return { trellis, backtrack };
     }
 
-    void SetCurrentPos(size_t pos) {
-        Recognizer_->Reset();
-        SpeechPhonemesBuffer_->Reset();
+    static TPath DoBacktrack(const Eigen::MatrixXf& trellis, const Eigen::MatrixXi& backtrack, std::span<const int64_t> tokens, int64_t blankTokenIndex) {
+        Eigen::Index selectedCol;
+        trellis.row(trellis.rows() - 1).maxCoeff(&selectedCol);
+        TPoint pos = { trellis.rows() - 1, selectedCol };
 
-        if (PhonemeIndexToTextIndex_.empty() || PhonemeIndexToTextIndex_.back() < pos) {
-            PhonemesMatcher_->SetCurrentPos(PhonemeIndexToTextIndex_.size());
-            return;
+        TPath res;
+        for (auto& [row, col] = pos; row != 0 && col != 0; pos = { row + backtrack(row, col), col - 1 }) {
+            res.emplace_back(row - 1, col - 1);
         }
 
-        auto range = std::equal_range(PhonemeIndexToTextIndex_.begin(), PhonemeIndexToTextIndex_.end(), pos, [](auto& w, auto& p) {
-            return w < p;
-        });
-        if (range.first == range.second) {
-            return;
-        }
-
-        auto it = std::lower_bound(range.first, range.second, pos);
-        if (it == range.second) {
-            return;
-        }
-
-        PhonemesMatcher_->SetCurrentPos(it - PhonemeIndexToTextIndex_.begin());
-    }
-
-    size_t GetCurrentPos() const {
-        if (PhonemeIndexToTextIndex_.empty()) {
-            return 0;
-        }
-        size_t pos = PhonemesMatcher_->GetCurrentPos();
-        if (pos >= PhonemeIndexToTextIndex_.size()) {
-            return PhonemeIndexToTextIndex_.back() + 1;
-        }
-        return PhonemeIndexToTextIndex_[pos];
-    }
-
-    void SetMatchParameters(const TPhonemesMatcher::TMatchParameters& matchParameters) {
-        MatchParameters_ = matchParameters;
-    }
-
-    const TPhonemesMatcher::TMatchParameters& GetMatchParameters() const {
-        return MatchParameters_;
+        std::reverse(res.begin(), res.end());
+        return res;
     }
 
 private:
-    TPhonemesMatcher::TMatchParameters MatchParameters_;
+    EMode Mode_;
+};
 
-    std::shared_ptr<IRecognizer> Recognizer_;
-    std::shared_ptr<ITokenizer> Tokenizer_;
+class TOnlineMatcher : public IMatcher {
+public:
+    TOnlineMatcher(std::shared_ptr<IMatcher> matcher, size_t contextMaxSize)
+        : Matcher_(matcher)
+        , ContextMaxSize_(contextMaxSize)
+    {}
 
-    std::unique_ptr<TSpeechPhonemesBuffer> SpeechPhonemesBuffer_;
-    std::unique_ptr<TPhonemesMatcher> PhonemesMatcher_;
-    std::vector<size_t> PhonemeIndexToTextIndex_;
+    std::tuple<std::span<const int64_t>, float> Update(Eigen::Map<const Eigen::MatrixXf> emissions, std::span<const int64_t> tokens, int64_t blankTokenIndex) override {
+        const size_t currentSize = Context_.size() / emissions.rows() + emissions.cols();
+        if (currentSize > ContextMaxSize_) {
+            Context_.erase(Context_.begin(), Context_.begin() + (currentSize - ContextMaxSize_) * emissions.rows());
+        }
+        Context_.insert(Context_.end(), emissions.data(), emissions.data() + emissions.size());
+
+        return Matcher_->Update(Eigen::Map<const Eigen::MatrixXf>(Context_.data(), emissions.rows(), Context_.size() / emissions.rows()), tokens, blankTokenIndex);
+    }
+
+private:
+    std::shared_ptr<IMatcher> Matcher_;
+    size_t ContextMaxSize_;
+    std::vector<float> Context_;
 };
 
 } // namespace NTruePrompter::NRecognition
+
