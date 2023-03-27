@@ -2,9 +2,10 @@
 
 #include <Eigen/Dense>
 
+#include <iostream>
+#include <memory>
 #include <span>
 #include <vector>
-#include <iostream>
 
 namespace NTruePrompter::NRecognition {
 

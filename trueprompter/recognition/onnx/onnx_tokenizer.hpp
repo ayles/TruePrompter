@@ -3,6 +3,7 @@
 #include <trueprompter/recognition/tokenizer.hpp>
 
 #include <array>
+#include <stdexcept>
 #include <string_view>
 
 namespace NTruePrompter::NRecognition {
