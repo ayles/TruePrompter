@@ -45,10 +45,10 @@ public:
         "Z",
     }};
 
-    bool Apply(const std::string& text, std::vector<int64_t>* tokensOut, std::vector<size_t>* tokensOffsetsOut) override {
+    void Tokenize(const std::string& text, std::vector<int64_t>* tokensOut, std::vector<size_t>* mappingOut) override {
         tokensOut->clear();
-        if (tokensOffsetsOut) {
-            tokensOffsetsOut->clear();
+        if (mappingOut) {
+            mappingOut->clear();
         }
 
         for (char c : text) {
@@ -57,12 +57,10 @@ public:
                 throw std::runtime_error("Unknown char " + std::to_string((int)c));
             }
             tokensOut->emplace_back(it - Tokens.begin());
-            if (tokensOffsetsOut) {
-                tokensOffsetsOut->emplace_back(tokensOffsetsOut->size());
+            if (mappingOut) {
+                mappingOut->emplace_back(mappingOut->size());
             }
         }
-
-        return true;
     }
 
     std::string Lookup(int64_t token) const override {
@@ -71,10 +69,6 @@ public:
 
     int64_t GetBlankToken() const override {
         return 0;
-    }
-
-    int64_t GetSpaceToken() const override {
-        return 4;
     }
 };
 

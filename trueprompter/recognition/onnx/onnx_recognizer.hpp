@@ -103,6 +103,10 @@ public:
         return Model_->FrameSize_;
     }
 
+    void Reset() override {
+        // It has no state, so reset is no-op
+    }
+
 private:
     std::shared_ptr<TOnnxModel> Model_;
 };

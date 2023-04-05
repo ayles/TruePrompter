@@ -1,14 +1,19 @@
-#include <trueprompter/codec/audio_codec.hpp>
+#include "client_context.hpp"
+
 #include <trueprompter/common/proto/protocol.pb.h>
-#include <trueprompter/recognition/kaldi/kaldi.hpp>
+#include <trueprompter/recognition/impl/online_matcher.hpp>
+#include <trueprompter/recognition/impl/online_recognizer.hpp>
+#include <trueprompter/recognition/impl/viterbi_matcher.hpp>
+#include <trueprompter/recognition/onnx/onnx_recognizer.hpp>
+#include <trueprompter/recognition/onnx/onnx_tokenizer.hpp>
 #include <trueprompter/recognition/matcher.hpp>
 
-#include <websocketpp/server.hpp>
 #include <websocketpp/config/asio.hpp>
+#include <websocketpp/server.hpp>
 
-#include <spdlog/spdlog.h>
-#include <spdlog/sinks/stdout_sinks.h>
 #include <spdlog/sinks/rotating_file_sink.h>
+#include <spdlog/sinks/stdout_sinks.h>
+#include <spdlog/spdlog.h>
 
 #include <cstdlib>
 #include <functional>
@@ -16,143 +21,14 @@
 #include <memory>
 #include <optional>
 
-
-class TClientContext {
-public:
-    TClientContext(const TClientContext&) = delete;
-    TClientContext(TClientContext&&) noexcept = delete;
-    TClientContext& operator=(const TClientContext&) = delete;
-    TClientContext& operator=(TClientContext&&) noexcept = delete;
-
-    TClientContext(const std::string& clientId, std::shared_ptr<NTruePrompter::NRecognition::IRecognizerFactory> recognizerFactory, std::shared_ptr<NTruePrompter::NRecognition::ITokenizerFactory> tokenizerFactory)
-        : ClientId_(clientId)
-        , RecognizerFactory_(std::move(recognizerFactory))
-        , TokenizerFactory_(std::move(tokenizerFactory))
-    {
-        SPDLOG_INFO("Client connected (client_id: \"{}\")", ClientId_);
-    }
-
-    ~TClientContext() {
-        SPDLOG_INFO("Client disconnected (client_id: \"{}\")", ClientId_);
-    }
-
-    std::optional<NTruePrompter::NCommon::NProto::TResponse> HandleMessage(const NTruePrompter::NCommon::NProto::TRequest& request) {
-        SPDLOG_DEBUG("Client message received (client_id: \"{}\")", ClientId_);
-
-        if (!Initialized_) {
-            if (request.has_handshake()) {
-                ClientName_ = request.handshake().client_name();
-                Initialized_ = true;
-                SPDLOG_INFO("Client initialized with handshake (client_id: \"{}\", handshake: {{ {} }})", ClientId_, request.handshake().ShortDebugString());
-            } else {
-                SPDLOG_WARN("Client message contains no handshake (client_id: \"{}\")", ClientId_);
-                throw std::runtime_error("No handshake provided");
-            }
-        }
-
-        if (request.has_text_data()) {
-            // TODO do not recreate matcher and do not reset recognizer
-            if (!request.text_data().language().empty() && Language_ != request.text_data().language()) {
-                Language_ = request.text_data().language();
-                Recognizer_ = RecognizerFactory_->New(*Language_);
-                Tokenizer_ = TokenizerFactory_->New(*Language_);
-            }
-            if (!Language_.has_value()) {
-                throw std::runtime_error("No language was provided");
-            }
-            Recognizer_->Reset();
-            auto params = Matcher_ ? Matcher_->GetMatchParameters() : NTruePrompter::NRecognition::TPhonemesMatcher::TMatchParameters();
-            Matcher_ = std::make_shared<NTruePrompter::NRecognition::TWordsMatcher>(request.text_data().text(), Recognizer_, Tokenizer_);
-            Matcher_->SetCurrentPos(request.text_data().text_pos());
-            Matcher_->SetMatchParameters(params);
-            SPDLOG_DEBUG("Client text data provided (client_id: \"{}\", text_data: {{ {} }})", ClientId_, request.text_data().ShortDebugString());
-        }
-
-        if (!Language_.has_value()) {
-            throw std::runtime_error("No language was provided");
-        }
-
-        if (request.has_matcher_params()) { 
-            // TODO rework parsing
-            NTruePrompter::NRecognition::TPhonemesMatcher::TMatchParameters params;
-            if (request.matcher_params().has_look_ahead()) {
-                params.LookAhead = request.matcher_params().look_ahead().value();
-            }
-            if (request.matcher_params().has_fade_over_look_ahead()) {
-                params.FadeOverLookAhead = request.matcher_params().fade_over_look_ahead().value();
-            }
-            if (request.matcher_params().has_similar_score()) {
-                params.SimilarScore = request.matcher_params().similar_score().value();
-            }
-            if (request.matcher_params().has_different_score()) {
-                params.DifferentScore = request.matcher_params().different_score().value();
-            }
-            if (request.matcher_params().has_source_skip_weight()) {
-                params.SourceSkipWeight = request.matcher_params().source_skip_weight().value();
-            }
-            if (request.matcher_params().has_target_skip_weight()) {
-                params.TargetSkipWeight = request.matcher_params().target_skip_weight().value();
-            }
-            if (request.matcher_params().has_min_match_weight()) {
-                params.MinMatchWeight = request.matcher_params().min_match_weight().value();
-            }
-            Matcher_->SetMatchParameters(params);
-            SPDLOG_DEBUG("Client matcher parameters changed (client_id: \"{}\", matcher_parameters: {{ {} }})", ClientId_, request.matcher_params().ShortDebugString());
-        }
-
-        if (request.has_audio_data()) {
-            if (request.audio_data().has_meta()) {
-                SPDLOG_DEBUG("Client audio meta set (client_id: \"{}\", audio_meta: {{ {} }})", ClientId_, request.audio_data().meta().ShortDebugString());
-                if (!Decoder_ || !NTruePrompter::NCodec::IsMetaEquivalent(request.audio_data().meta(), Decoder_->GetMeta())) {
-                    Decoder_ = NTruePrompter::NCodec::CreateDecoder(request.audio_data().meta());
-                    Decoder_->SetCallback([this](const float* data, size_t size) {
-                        if (!data || !size) {
-                            return;
-                        }
-                        Matcher_->AcceptWaveform(data, size, Decoder_->GetSampleRate());
-                        SPDLOG_DEBUG("Client audio decoded (client_id: \"{}\", samples: [{}, ...])", ClientId_, *data);
-                    });
-                    SPDLOG_DEBUG("Client decoder reset (client_id: \"{}\")", ClientId_);
-                }
-            }
-            if (!request.audio_data().data().empty()) {
-                if (!Decoder_) {
-                    SPDLOG_WARN("Client message contains audio data, but no meta provided (client_id: \"{}\")", ClientId_);
-                    throw std::runtime_error("No audio meta provided");
-                }
-                SPDLOG_DEBUG("Client audio data provided (client_id: \"{}\", audio_data: binary)", ClientId_);
-                Decoder_->Decode(reinterpret_cast<const uint8_t*>(request.audio_data().data().data()), request.audio_data().data().size());
-                // TODO async
-                NTruePrompter::NCommon::NProto::TResponse response;
-                response.mutable_recognition_result()->set_text_pos(Matcher_->GetCurrentPos());
-                SPDLOG_DEBUG("Client sending recognition result (client_id: \"{}\", recognition_result: {{ {} }})", ClientId_, response.recognition_result().ShortDebugString());
-                return response;
-            }
-        }
-
-        return std::nullopt;
-    }
-
-private:
-    bool Initialized_ = false;
-    std::string ClientId_;
-    std::string ClientName_;
-    std::shared_ptr<NTruePrompter::NRecognition::IRecognizerFactory> RecognizerFactory_;
-    std::shared_ptr<NTruePrompter::NRecognition::ITokenizerFactory> TokenizerFactory_;
-    std::shared_ptr<NTruePrompter::NRecognition::IRecognizer> Recognizer_;
-    std::shared_ptr<NTruePrompter::NRecognition::ITokenizer> Tokenizer_;
-    std::shared_ptr<NTruePrompter::NRecognition::TWordsMatcher> Matcher_;
-    std::shared_ptr<NTruePrompter::NCodec::IAudioDecoder> Decoder_;
-    std::optional<std::string> Language_;
-};
+namespace NTruePrompter::NServer {
 
 class TTruePrompterServer {
 public:
     using TWebSocketServer = websocketpp::server<websocketpp::config::asio>;
 
-    TTruePrompterServer(const std::shared_ptr<NTruePrompter::NRecognition::IRecognizerFactory>& recognizerFactory, const std::shared_ptr<NTruePrompter::NRecognition::ITokenizerFactory>& tokenizerFactory)
-        : RecognizerFactory_(recognizerFactory)
-        , TokenizerFactory_(tokenizerFactory)
+    TTruePrompterServer(const std::filesystem::path& modelPath)
+        : Model_(std::make_shared<NRecognition::TOnnxModel>(modelPath))
     {}
 
     void Run(uint16_t port) {
@@ -164,7 +40,28 @@ public:
             server.init_asio();
 
             server.set_open_handler([&server, this](websocketpp::connection_hdl hdl) {
-                Clients_.emplace(hdl, std::make_shared<TClientContext>(server.get_con_from_hdl(hdl)->get_remote_endpoint(), RecognizerFactory_, TokenizerFactory_));
+                auto recognizer = std::make_shared<NRecognition::TOnlineRecognizer>(
+                    std::make_shared<NRecognition::TOnnxRecognizer>(Model_),
+                    1.0,
+                    0.2,
+                    0.2
+                );
+                auto tokenizer = std::make_shared<NRecognition::TOnnxTokenizer>();
+                auto matcher = std::make_shared<NRecognition::TOnlineMatcher>(
+                    std::make_shared<NRecognition::TViterbiMatcher>(tokenizer->GetBlankToken(), 5, 0.9),
+                    1.0 * recognizer->GetSampleRate() / recognizer->GetFrameSize()
+                );
+                Clients_.emplace(
+                    hdl,
+                    std::make_shared<TClientContext>(
+                        server.get_con_from_hdl(hdl)->get_remote_endpoint(),
+                        std::make_shared<NRecognition::TPrompter>(
+                            recognizer,
+                            tokenizer,
+                            matcher
+                        )
+                    )
+                );
             });
 
             server.set_close_handler([this](websocketpp::connection_hdl hdl) {
@@ -222,14 +119,15 @@ public:
     }
 
 private:
-    std::shared_ptr<NTruePrompter::NRecognition::IRecognizerFactory> RecognizerFactory_;
-    std::shared_ptr<NTruePrompter::NRecognition::ITokenizerFactory> TokenizerFactory_;
+    std::shared_ptr<NRecognition::TOnnxModel> Model_;
     std::map<websocketpp::connection_hdl, std::shared_ptr<TClientContext>, std::owner_less<websocketpp::connection_hdl>> Clients_;
 };
 
+} // namespace NTruePrompter::NServer
+
 int main(int argc, char* argv[]) {
     if (argc < 3) {
-        std::cerr << "Expected <port> <models_folder> [<info_log_file> [<debug_log_file>]]" << std::endl;
+        std::cerr << "Expected <port> <model_path> [<info_log_file> [<debug_log_file>]]" << std::endl;
         return -1;
     }
 
@@ -260,19 +158,8 @@ int main(int argc, char* argv[]) {
 
     SPDLOG_INFO("Initializing..");
 
-    std::unordered_map<std::string, std::shared_ptr<NTruePrompter::NRecognition::TKaldiModel>> models;
-    for (auto& entry : std::filesystem::directory_iterator(argv[2])) {
-        if (entry.is_directory()) {
-            models[entry.path().filename()] = NTruePrompter::NRecognition::LoadKaldiModel(entry.path());
-            if (entry.path().filename() == "ru") {
-                models["ru+kz"] = NTruePrompter::NRecognition::LoadKaldiModel(entry.path().parent_path() / "ru+kz");
-            }
-        }
-    }
-
-    auto kaldiRecognizerFactory = NTruePrompter::NRecognition::NewKaldiRecognizerFactory(models);
-    auto kaldiTokenizerFactory = NTruePrompter::NRecognition::NewKaldiTokenizerFactory(models);
-    TTruePrompterServer server(kaldiRecognizerFactory, kaldiTokenizerFactory);
+    NTruePrompter::NServer::TTruePrompterServer server(argv[2]);
     SPDLOG_INFO("Started");
     server.Run(std::atoi(argv[1]));
 }
+
