@@ -26,7 +26,7 @@ public:
         auto match = Matcher_->Match(constEmissions, { Tokens_.data() + TokenCursor_, std::min(LookAheadTokens_, Tokens_.size() - TokenCursor_) });
 
         if (!match.empty()) {
-            TokenCursor_ = match.end() - Tokens_.begin();
+            TokenCursor_ = match.data() + match.size() - Tokens_.data();
         }
     }
 
@@ -37,6 +37,10 @@ public:
     void SetText(std::string text) {
         Text_ = std::move(text);
         Tokenizer_->Tokenize(Text_, &Tokens_, &Mapping_);
+        for (auto t : Tokens_) {
+            std::cout << Tokenizer_->Lookup(t);
+        }
+        std::cout << std::endl;
         SetCursor(0);
     }
 

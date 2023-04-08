@@ -190,6 +190,7 @@ public:
 
         auto path = NPrivate::BacktrackNew(ctx);
 
+        std::cout << path.Weight() << std::endl;
         if (path.Weight() < MatchStopWeight_) {
             return {};
         }

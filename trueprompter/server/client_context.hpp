@@ -5,6 +5,8 @@
 
 #include <spdlog/spdlog.h>
 
+#include <optional>
+
 namespace NTruePrompter::NServer {
 
 class TClientContext {

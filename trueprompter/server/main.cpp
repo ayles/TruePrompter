@@ -28,7 +28,7 @@ public:
     using TWebSocketServer = websocketpp::server<websocketpp::config::asio>;
 
     TTruePrompterServer(const std::filesystem::path& modelPath)
-        : Model_(std::make_shared<NRecognition::TOnnxModel>(modelPath))
+        : Model_(std::make_shared<NRecognition::TOnnxModel>(modelPath / "config.json", modelPath / "model.onnx", modelPath / "model.fst"))
     {}
 
     void Run(uint16_t port) {
@@ -46,7 +46,7 @@ public:
                     0.2,
                     0.2
                 );
-                auto tokenizer = std::make_shared<NRecognition::TOnnxTokenizer>();
+                auto tokenizer = std::make_shared<NRecognition::TOnnxTokenizer>(Model_);
                 auto matcher = std::make_shared<NRecognition::TOnlineMatcher>(
                     std::make_shared<NRecognition::TViterbiMatcher>(tokenizer->GetBlankToken(), 5, 0.9),
                     1.0 * recognizer->GetSampleRate() / recognizer->GetFrameSize()

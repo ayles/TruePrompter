@@ -1,65 +1,12 @@
 #pragma once
 
+#include "onnx_model.hpp"
+
 #include <trueprompter/recognition/recognizer.hpp>
 
 #include <onnxruntime/core/session/experimental_onnxruntime_cxx_api.h>
 
-#include <filesystem>
-
 namespace NTruePrompter::NRecognition {
-
-class TOnnxModel {
-public:
-    friend class TOnnxRecognizer;
-
-    TOnnxModel(const std::filesystem::path& path)
-        : Env_(ORT_LOGGING_LEVEL_WARNING, "TOnnxModel")
-        , Opts_()
-        , MemInfo_(Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault))
-    {
-        Opts_.SetIntraOpNumThreads(1);
-        Opts_.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_EXTENDED);
-        Session_ = std::make_unique<Ort::Session>(Env_, path.c_str(), Opts_);
-
-        if (Session_->GetInputCount() != 1) {
-            throw std::runtime_error("Expected single input model");
-        }
-
-        if (Session_->GetOutputCount() != 1) {
-            throw std::runtime_error("Expected single output model");
-        }
-
-        auto inputShape = Session_->GetInputTypeInfo(0).GetTensorTypeAndShapeInfo().GetShape();
-        if (inputShape.size() != 2 || inputShape[0] != -1 || inputShape[1] != -1) {
-            throw std::runtime_error("Unexpected input shape");
-        }
-
-        auto outputShape = Session_->GetOutputTypeInfo(0).GetTensorTypeAndShapeInfo().GetShape();
-        if (outputShape.size() != 3 || outputShape[0] != -1 || outputShape[1] != -1 || outputShape[2] <= 0) {
-            throw std::runtime_error("Unexpected output shape");
-        }
-
-        // TODO load meta
-        SampleRate_ = 16000;
-        FrameSize_ = 320;
-        FeaturesCount_ = outputShape[2];
-
-        Ort::AllocatorWithDefaultOptions alloc;
-        InputName_ = Session_->GetInputNameAllocated(0, alloc).get();
-        OutputName_ = Session_->GetOutputNameAllocated(0, alloc).get();
-    }
-
-private:
-    Ort::Env Env_;
-    Ort::SessionOptions Opts_;
-    Ort::MemoryInfo MemInfo_;
-    std::unique_ptr<Ort::Session> Session_;
-    int64_t SampleRate_;
-    int64_t FrameSize_;
-    int64_t FeaturesCount_;
-    std::string InputName_;
-    std::string OutputName_;
-};
 
 class TOnnxRecognizer : public IRecognizer {
 public:

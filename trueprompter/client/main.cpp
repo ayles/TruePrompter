@@ -8,11 +8,12 @@
 #include <websocketpp/client.hpp>
 
 #include <cstddef>
-#include <vector>
-#include <iostream>
-#include <thread>
 #include <fstream>
+#include <iostream>
 #include <mutex>
+#include <optional>
+#include <thread>
+#include <vector>
 
 
 int main(int argc, char* argv[]) {
