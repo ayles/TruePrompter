@@ -24,12 +24,11 @@ public:
             if (DataContext_.size() > ChunkLength_) {
                 throw std::runtime_error("Should never happen");
             }
-            const int64_t currentLeftStride = std::min<int64_t>(DataContext_.size(), LeftStrideLength_);
             const size_t toConsume = ChunkLength_ - DataContext_.size();
             DataContext_.insert(DataContext_.end(), data.begin(), data.begin() + toConsume);
             data = { data.data() + toConsume, data.size() - toConsume };
             auto emission = Recognizer_->Update(DataContext_, &BufContext_);
-            auto begin = emission.data() + currentLeftStride / Recognizer_->GetFrameSize() * emission.rows();
+            auto begin = emission.data() + LeftStrideLength_ / Recognizer_->GetFrameSize() * emission.rows();
             auto end = emission.data() + emission.size() - RightStrideLength_ / Recognizer_->GetFrameSize() * emission.rows();
             buf->insert(buf->end(), begin < end ? begin : end, end);
             lastRows = emission.rows();

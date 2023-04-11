@@ -42,14 +42,15 @@ public:
             server.set_open_handler([&server, this](websocketpp::connection_hdl hdl) {
                 auto recognizer = std::make_shared<NRecognition::TOnlineRecognizer>(
                     std::make_shared<NRecognition::TOnnxRecognizer>(Model_),
-                    1.0,
-                    0.2,
-                    0.2
+                    2.0,
+                    0.8,
+                    0.4
                 );
                 auto tokenizer = std::make_shared<NRecognition::TOnnxTokenizer>(Model_);
                 auto matcher = std::make_shared<NRecognition::TOnlineMatcher>(
-                    std::make_shared<NRecognition::TViterbiMatcher>(tokenizer->GetBlankToken(), 5, 0.9),
-                    1.0 * recognizer->GetSampleRate() / recognizer->GetFrameSize()
+                    std::make_shared<NRecognition::TViterbiMatcher>(tokenizer->GetBlankToken(), 4, 0.7),
+                    1.5 * recognizer->GetSampleRate() / recognizer->GetFrameSize(),
+                    0.2 * recognizer->GetSampleRate() / recognizer->GetFrameSize()
                 );
                 Clients_.emplace(
                     hdl,

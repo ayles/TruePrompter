@@ -26,6 +26,10 @@ public:
         auto match = Matcher_->Match(constEmissions, { Tokens_.data() + TokenCursor_, std::min(LookAheadTokens_, Tokens_.size() - TokenCursor_) });
 
         if (!match.empty()) {
+            for (auto t : match) {
+                std::cout << t << " " << Tokenizer_->Lookup(t);
+            }
+            std::cout << std::endl;
             TokenCursor_ = match.data() + match.size() - Tokens_.data();
         }
     }
