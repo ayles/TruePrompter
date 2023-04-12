@@ -12,3 +12,6 @@ target_link_libraries(trueprompter_client
     websocketpp_complete
     utf8::cpp
 )
+
+install(TARGETS trueprompter_client DESTINATION bin)
+

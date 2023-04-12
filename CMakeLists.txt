@@ -30,18 +30,16 @@ find_package(websocketpp REQUIRED)
 
 include(cmake/proto_utils.cmake)
 
-add_subdirectory(deps/argumentum)
-add_subdirectory(deps/avcpp)
-add_subdirectory(deps/json)
-add_subdirectory(deps/openfst)
-add_subdirectory(deps/portaudio)
-add_subdirectory(deps/spdlog)
-add_subdirectory(deps/utfcpp)
-
-add_subdirectory(cmake/phonetisaurus)
-
-add_subdirectory(deps/matplotplusplus)
+add_subdirectory(deps/argumentum EXCLUDE_FROM_ALL)
+add_subdirectory(deps/avcpp EXCLUDE_FROM_ALL)
+add_subdirectory(deps/json EXCLUDE_FROM_ALL)
+add_subdirectory(deps/openfst EXCLUDE_FROM_ALL)
+add_subdirectory(deps/portaudio EXCLUDE_FROM_ALL)
+add_subdirectory(deps/spdlog EXCLUDE_FROM_ALL)
+add_subdirectory(deps/utfcpp EXCLUDE_FROM_ALL)
+add_subdirectory(deps/matplotplusplus EXCLUDE_FROM_ALL)
 set_property(TARGET matplot PROPERTY CXX_STANDARD 17)
+add_subdirectory(cmake/phonetisaurus EXCLUDE_FROM_ALL)
 
 add_library(websocketpp_complete INTERFACE)
 target_link_libraries(websocketpp_complete INTERFACE websocketpp::websocketpp OpenSSL::SSL Boost::headers) # OpenSSL::Crypto

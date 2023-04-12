@@ -5,4 +5,5 @@
 build/
 cmake-build-*/
 compile_commands.json
+result
 

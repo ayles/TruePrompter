@@ -10,3 +10,5 @@ target_link_libraries(trueprompter_server
     spdlog
 )
 
+install(TARGETS trueprompter_server DESTINATION bin)
+
