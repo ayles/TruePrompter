@@ -25,6 +25,7 @@
           };
           packages.dockerImage = pkgs.dockerTools.buildImage {
             name = "trueprompter";
+            tag = "latest";
             config = { Cmd = [ apps.server.program ]; };
           };
           devShells.default = (
