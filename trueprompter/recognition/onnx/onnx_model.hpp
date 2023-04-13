@@ -47,7 +47,7 @@ private:
     Ort::MemoryInfo MemInfo_;
     std::unique_ptr<Ort::Session> Session_;
     std::unique_ptr<PhonetisaurusScript> PhonetisaurusScript_;
-    std::unordered_map<int64_t, int64_t> PhonetisaurusRemap_;
+    std::unordered_map<int64_t, int64_t> Remap_;
     int64_t SampleRate_;
     int64_t FrameSize_;
     int64_t FeaturesCount_;

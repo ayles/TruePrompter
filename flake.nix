@@ -26,7 +26,23 @@
           packages.dockerImage = pkgs.dockerTools.buildImage {
             name = "trueprompter";
             tag = "latest";
-            config = { Cmd = [ apps.server.program ]; };
+            copyToRoot = pkgs.buildEnv {
+              name = "root";
+              paths = [
+                packages.trueprompter
+                ./.
+              ];
+              pathsToLink = [ "/bin" "/model" ];
+            };
+            config =
+            let
+              port = "8080";
+            in {
+              Cmd = [ apps.server.program port "/model" "/logs/info.log" "/logs/debug.log" ];
+              ExposedPorts = {
+                "${port}/tcp" = {};
+              };
+            };
           };
           devShells.default = (
             pkgs.mkShell.override {

@@ -25,3 +25,6 @@
 [submodule "deps/phonetisaurus"]
 	path = deps/phonetisaurus
 	url = https://github.com/ayles/Phonetisaurus.git
+[submodule "deps/libsamplerate"]
+	path = deps/libsamplerate
+	url = https://github.com/libsndfile/libsamplerate.git

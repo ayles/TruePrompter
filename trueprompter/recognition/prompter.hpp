@@ -23,14 +23,14 @@ public:
         }
         Eigen::Map<const Eigen::MatrixXf> constEmissions(emissions.data(), emissions.rows(), emissions.cols());
 
-        auto match = Matcher_->Match(constEmissions, { Tokens_.data() + TokenCursor_, std::min(LookAheadTokens_, Tokens_.size() - TokenCursor_) });
+        auto [_, match] = Matcher_->Match(constEmissions, { Tokens_.data() + TokenCursor_, std::min(LookAheadTokens_, Tokens_.size() - TokenCursor_) });
 
         if (!match.empty()) {
             for (auto t : match) {
-                std::cout << t << " " << Tokenizer_->Lookup(t);
+                std::cout << Tokenizer_->Lookup(t);
             }
             std::cout << std::endl;
-            TokenCursor_ = match.data() + match.size() - Tokens_.data();
+            TokenCursor_ = std::max<size_t>(TokenCursor_, match.data() + match.size() - Tokens_.data());
         }
     }
 
@@ -73,7 +73,7 @@ public:
     }
 
 private:
-    const size_t LookAheadTokens_ = 25;
+    const size_t LookAheadTokens_ = 40;
     const std::shared_ptr<IRecognizer> Recognizer_;
     const std::shared_ptr<ITokenizer> Tokenizer_;
     const std::shared_ptr<IMatcher> Matcher_;

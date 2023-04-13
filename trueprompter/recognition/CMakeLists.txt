@@ -1,5 +1,6 @@
 add_library(trueprompter_recognition_cxx17
     onnx/onnx_model.cpp
+    onnx/onnx_model.hpp
 )
 
 set_property(TARGET trueprompter_recognition_cxx17 PROPERTY CXX_STANDARD 17)
@@ -15,12 +16,13 @@ target_include_directories(trueprompter_recognition_cxx17
 )
 
 add_library(trueprompter_recognition
+    dummy.cpp
     matcher.hpp
     recognizer.hpp
     tokenizer.hpp
+    impl/online_matcher.hpp
     impl/online_recognizer.hpp
     impl/viterbi_matcher.hpp
-    onnx/onnx_model.hpp
     onnx/onnx_recognizer.cpp
     onnx/onnx_recognizer.hpp
     onnx/onnx_tokenizer.cpp

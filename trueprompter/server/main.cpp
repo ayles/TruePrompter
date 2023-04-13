@@ -48,9 +48,9 @@ public:
                 );
                 auto tokenizer = std::make_shared<NRecognition::TOnnxTokenizer>(Model_);
                 auto matcher = std::make_shared<NRecognition::TOnlineMatcher>(
-                    std::make_shared<NRecognition::TViterbiMatcher>(tokenizer->GetBlankToken(), 4, 0.7),
+                    std::make_shared<NRecognition::TViterbiMatcher>(tokenizer->GetBlankToken(), 5, 0.7),
                     1.5 * recognizer->GetSampleRate() / recognizer->GetFrameSize(),
-                    0.2 * recognizer->GetSampleRate() / recognizer->GetFrameSize()
+                    0.5 * recognizer->GetSampleRate() / recognizer->GetFrameSize()
                 );
                 Clients_.emplace(
                     hdl,

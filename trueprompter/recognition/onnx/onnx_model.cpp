@@ -13,7 +13,7 @@ TOnnxModel::TOnnxModel(const std::filesystem::path& configPath, const std::files
     , Env_(ORT_LOGGING_LEVEL_WARNING, "TOnnxModel")
     , Opts_()
     , MemInfo_(Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault))
-    , PhonetisaurusScript_(std::make_unique<PhonetisaurusScript>(fstPath))
+    , PhonetisaurusScript_(std::filesystem::exists(fstPath) ? std::make_unique<PhonetisaurusScript>(fstPath) : nullptr)
 {
     SampleRate_ = Config_.at("sampling_rate").get<int64_t>();
     FrameSize_ = Config_.at("inputs_to_logits_ratio").get<int64_t>();
@@ -55,9 +55,19 @@ TOnnxModel::TOnnxModel(const std::filesystem::path& configPath, const std::files
     InputName_ = Session_->GetInputNameAllocated(0, alloc).get();
     OutputName_ = Session_->GetOutputNameAllocated(0, alloc).get();
 
-    for (auto& [k, v] : Vocab_) {
-        int64_t pk = PhonetisaurusScript_->FindOsym(v);
-        PhonetisaurusRemap_[pk] = k;
+    if (PhonetisaurusScript_) {
+        for (auto& [k, v] : Vocab_) {
+            int64_t pk = PhonetisaurusScript_->FindOsym(v);
+            Remap_[pk] = k;
+        }
+    } else {
+        for (auto& [k, v] : Vocab_) {
+            auto it = v.begin();
+            int32_t c = utf8::next(it, v.end());
+            if (it == v.end()) {
+                Remap_[c] = k;
+            }
+        }
     }
 }
 
@@ -65,10 +75,24 @@ TOnnxModel::~TOnnxModel() = default;
 
 std::vector<int64_t> TOnnxModel::Phoneticize(const std::string& word) const {
     std::vector<int64_t> res;
-    auto ret = PhonetisaurusScript_->Phoneticize(word);
-    for (size_t j = 0; j < ret[0].Uniques.size(); ++j) {
-        res.emplace_back(PhonetisaurusRemap_.at(ret[0].Uniques[j]));
+    if (PhonetisaurusScript_) {
+        auto ret = PhonetisaurusScript_->Phoneticize(word);
+        for (size_t j = 0; j < ret[0].Uniques.size(); ++j) {
+            res.emplace_back(ret[0].Uniques[j]);
+        }
+    } else {
+        for (auto it = word.begin(); it != word.end(); ) {
+            res.emplace_back(utf8::next(it, word.end()));
+        }
     }
+    size_t pos = 0;
+    for (int64_t v : res) {
+        auto it = Remap_.find(v);
+        if (it != Remap_.end()) {
+            res[pos++] = it->second;
+        }
+    }
+    res.resize(pos);
     return res;
 }
 

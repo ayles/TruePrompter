@@ -4,8 +4,9 @@ add_executable(trueprompter_server
 )
 
 target_link_libraries(trueprompter_server
-    trueprompter_recognition
+    trueprompter_codec
     trueprompter_common
+    trueprompter_recognition
     websocketpp_complete
     spdlog
 )

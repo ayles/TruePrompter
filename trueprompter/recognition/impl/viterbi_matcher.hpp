@@ -12,10 +12,11 @@ namespace NTruePrompter::NRecognition {
 namespace NPrivate {
 
 struct TContext {
+    int MatchLength;
+    float MatchMinWeight;
     Eigen::Map<const Eigen::MatrixXf> Emission;
     Eigen::Map<const Eigen::MatrixXi> Backtrack;
     std::span<const int64_t> Tokens;
-    int MaxMatchLength;
 
     float GetEmission(const Eigen::Vector2i& pos) const {
         return Emission(Tokens[pos(0)], pos(1));
@@ -29,65 +30,74 @@ struct TContext {
 class TPath {
 public:
     TPath(const Eigen::Vector2i& pos)
-        : Head(pos)
-        , Tail(pos)
-        , WeightSum(0.0)
+        : Head_(pos)
+        , Tail_(pos)
+        , WeightSum_(0.0)
     {}
 
     int Length() const {
-        return Tail(0) - Head(0);
+        return Tail_(0) - Head_(0);
     }
 
     float Weight() const {
         int length = Length();
-        return length ? std::exp(WeightSum / length) : 0.0;
+        return length ? std::exp(WeightSum_ / length) : 0.0;
     }
 
     bool IsFinished() const {
-        return Head(0) < 0 || Head(1) < 0;
+        return Head_(0) < 0 || Head_(1) < 0;
     }
 
     void Advance(const TContext& ctx) {
         while (!IsFinished()) {
-            auto prev = ctx.GetPrev(Head);
-            auto emission = ctx.GetEmission(Head);
-            std::swap(Head, prev);
-            if (Head(0) != prev(0)) {
-                WeightSum += emission;
+            auto prev = ctx.GetPrev(Head_);
+            auto emission = ctx.GetEmission(Head_);
+            std::swap(Head_, prev);
+            if (Head_(0) != prev(0)) {
+                WeightSum_ += emission;
                 break;
             }
         }
 
-        while (Tail(1) > Head(1) + 1) {
-            auto prev = ctx.GetPrev(Tail);
-            if (Tail(0) != prev(0)) {
-                if (Length() <= ctx.MaxMatchLength) {
+        while (Tail_(1) > Head_(1) + 1) {
+            auto prev = ctx.GetPrev(Tail_);
+            if (Tail_(0) != prev(0)) {
+                if (Length() <= ctx.MatchLength) {
                     break;
                 }
-                WeightSum -= ctx.GetEmission(Tail);
+                WeightSum_ -= ctx.GetEmission(Tail_);
             }
-            Tail = prev;
+            Tail_ = prev;
         }
     }
 
-    std::vector<Eigen::Vector2i> Track(const TContext& ctx) const {
+    IMatcher::TTrack Track(const TContext& ctx) const {
         std::vector<Eigen::Vector2i> res;
-        auto pos = Tail;
-        while (pos != Head) {
+        auto pos = Tail_;
+        while (pos != Head_) {
             res.emplace_back(pos);
             pos = ctx.GetPrev(pos);
         }
+        std::reverse(res.begin(), res.end());
         return res;
     }
 
     uint64_t Id() const {
-        return ((uint64_t)Tail(0) << 32) | (uint64_t)Tail(1);
+        return ((uint64_t)Tail_(0) << 32) | (uint64_t)Tail_(1);
+    }
+
+    const Eigen::Vector2i& GetHead() const {
+        return Head_;
+    }
+
+    const Eigen::Vector2i& GetTail() const {
+        return Tail_;
     }
 
 private:
-    Eigen::Vector2i Head;
-    Eigen::Vector2i Tail;
-    double WeightSum;
+    Eigen::Vector2i Head_;
+    Eigen::Vector2i Tail_;
+    double WeightSum_;
 };
 
 static void ValidateTokens(Eigen::Map<const Eigen::MatrixXf> emission, std::span<const int64_t> tokens) {
@@ -127,20 +137,21 @@ static std::tuple<Eigen::MatrixXf, Eigen::MatrixXi> BuildTrellis(Eigen::Map<cons
 }
 
 static TPath BacktrackNew(const TContext& ctx) {
-    TPath maxPath(Eigen::Vector2i(-1, -1));
+    TPath bestPath(Eigen::Vector2i(-1, -1));
 
     std::unordered_set<uint64_t> seen;
 
     auto processPath = [&](TPath path) {
         while (!path.IsFinished()) {
             path.Advance(ctx);
-            if (path.Length() >= ctx.MaxMatchLength) {
+            if (path.Length() >= ctx.MatchLength) {
                 auto [_, ok] = seen.emplace(path.Id());
                 if (!ok) {
                     break;
                 }
-                if (path.Weight() > maxPath.Weight()) {
-                    maxPath = path;
+                // Try to choose first match in tokens sequence, not match with greater weight, to avoid jumps
+                if (path.Weight() >= ctx.MatchMinWeight && (bestPath.GetTail()(0) < 0 || path.GetTail()(0) < bestPath.GetTail()(0))) {
+                    bestPath = path;
                 }
             }
         }
@@ -164,68 +175,54 @@ static TPath BacktrackNew(const TContext& ctx) {
         }
     }
 
-    return maxPath;
+    return bestPath;
 }
 
 } // namespace NPrivate
 
 class TViterbiMatcher : public IMatcher {
 public:
-    TViterbiMatcher(int64_t blankToken, int matchSize = 0, float matchStopWeight = 0.0)
+    TViterbiMatcher(int64_t blankToken, int matchLength = 0, float matchMinWeight = 0.0)
         : BlankToken_(blankToken)
-        , MatchSize_(matchSize)
-        , MatchStopWeight_(matchStopWeight)
+        , MatchLength_(matchLength)
+        , MatchMinWeight_(matchMinWeight)
     {}
 
-    std::span<const int64_t> Match(Eigen::Map<const Eigen::MatrixXf> emission, std::span<const int64_t> tokens) const override {
+    std::tuple<TTrack, TTokensRange> Match(Eigen::Map<const Eigen::MatrixXf> emission, TTokensRange tokens) const override {
         NPrivate::ValidateTokens(emission, tokens);
         auto [trellis, backtrack] = NPrivate::BuildTrellis(emission, tokens, BlankToken_);
 
         NPrivate::TContext ctx {
+            .MatchLength = MatchLength_,
+            .MatchMinWeight = MatchMinWeight_,
             .Emission = emission,
             .Backtrack = {backtrack.data(), backtrack.rows(), backtrack.cols()},
             .Tokens = tokens,
-            .MaxMatchLength = MatchSize_,
         };
 
         auto path = NPrivate::BacktrackNew(ctx);
 
         std::cout << path.Weight() << std::endl;
-        if (path.Weight() < MatchStopWeight_) {
+        if (path.Weight() < ctx.MatchMinWeight) {
             return {};
         }
 
         auto track = path.Track(ctx);
 
-        if (false) {
-            std::vector<std::vector<double>> v(trellis.rows(), std::vector<double>(trellis.cols()));
-            for (size_t row = 0; row < trellis.rows(); ++row) {
-                for (size_t col = 0; col < trellis.cols(); ++col) {
-                    v[row][col] = trellis(row, col);
-                }
-            }
-
-            for (auto t : track) {
-                v[t(0)][t(1)] = -std::numeric_limits<float>::infinity();
-            }
-
-            matplot::image(v, true);
-            matplot::colorbar();
-            matplot::axes()->y_axis().reverse(false);
-            matplot::show();
-        }
-
         if (track.empty()) {
             return {};
         }
 
-        return { tokens.data() + track.back()(0), tokens.data() + track.front()(0) + 1 };
+        return {
+            std::move(track),
+            TTokensRange { tokens.data() + track.front()(0), tokens.data() + track.back()(0) + 1 },
+        };
     }
 
 private:
     const int64_t BlankToken_;
-    const int MatchSize_;
-    const float MatchStopWeight_;
+    const int MatchLength_;
+    const float MatchMinWeight_;
 };
 
 } // namespace NTruePrompter::NRecognition

@@ -1,7 +1,8 @@
 #pragma once
 
-#include <trueprompter/recognition/prompter.hpp>
+#include <trueprompter/codec/resampler.hpp>
 #include <trueprompter/common/proto/protocol.pb.h>
+#include <trueprompter/recognition/prompter.hpp>
 
 #include <spdlog/spdlog.h>
 
@@ -60,7 +61,9 @@ public:
                 SPDLOG_DEBUG("Client audio data provided (client_id: \"{}\", audio_data: binary)", ClientId_);
                 std::vector<float> data(request.audio_data().data().size() / sizeof(float));
                 std::memcpy(data.data(), request.audio_data().data().data(), request.audio_data().data().size());
-                Prompter_->Update(data);
+                std::vector<float> resampled;
+                Resampler_.Resample(data, request.audio_data().meta().sample_rate(), resampled, Prompter_->GetRecognizer()->GetSampleRate());
+                Prompter_->Update(resampled);
 
                 if (!response) {
                     response.emplace();
@@ -79,6 +82,7 @@ private:
     std::string ClientId_;
     std::string ClientName_;
     std::shared_ptr<NRecognition::TPrompter> Prompter_;
+    NCodec::TResampler Resampler_;
 };
 
 } // namespace NTruePrompter::NServer
