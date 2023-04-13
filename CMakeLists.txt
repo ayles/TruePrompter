@@ -30,16 +30,21 @@ find_package(websocketpp REQUIRED)
 
 include(cmake/proto_utils.cmake)
 
+# Some magic for matplotplusplus to work
+add_library(std_filesystem trueprompter/recognition/dummy.cpp)
+add_library(std::filesystem ALIAS std_filesystem)
+add_subdirectory(deps/matplotplusplus EXCLUDE_FROM_ALL)
+set_property(TARGET matplot PROPERTY CXX_STANDARD 17)
+
 add_subdirectory(deps/argumentum EXCLUDE_FROM_ALL)
 add_subdirectory(deps/avcpp EXCLUDE_FROM_ALL)
 add_subdirectory(deps/json EXCLUDE_FROM_ALL)
 add_subdirectory(deps/libsamplerate EXCLUDE_FROM_ALL)
-add_subdirectory(deps/matplotplusplus EXCLUDE_FROM_ALL)
 add_subdirectory(deps/openfst EXCLUDE_FROM_ALL)
 add_subdirectory(deps/portaudio EXCLUDE_FROM_ALL)
 add_subdirectory(deps/spdlog EXCLUDE_FROM_ALL)
 add_subdirectory(deps/utfcpp EXCLUDE_FROM_ALL)
-set_property(TARGET matplot PROPERTY CXX_STANDARD 17)
+
 add_subdirectory(cmake/phonetisaurus EXCLUDE_FROM_ALL)
 
 add_library(websocketpp_complete INTERFACE)

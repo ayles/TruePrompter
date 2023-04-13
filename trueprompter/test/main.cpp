@@ -61,7 +61,7 @@ int main() {
     }
     std::cout << std::endl;
 
-    auto match = matcher->Match(Eigen::Map<const Eigen::MatrixXf>(mat.data(), mat.rows(), mat.cols()), tokens);
+    auto [_, match] = matcher->Match(Eigen::Map<const Eigen::MatrixXf>(mat.data(), mat.rows(), mat.cols()), tokens);
 
     for (auto token : match) {
         std::cout << tokenizer->Lookup(token);
