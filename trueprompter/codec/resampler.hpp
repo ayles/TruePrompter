@@ -14,7 +14,7 @@ class TResampler {
 public:
     void Resample(std::span<const float> input, int64_t inputSampleRate, std::vector<float>& output, int64_t outputSampleRate) const {
         if (inputSampleRate < 8000 || inputSampleRate > 100000 || outputSampleRate < 8000 || outputSampleRate > 100000) {
-            throw std::runtime_error("Invalid sample rate");
+            throw std::runtime_error("Invalid sample rate (inputSampleRate: " + std::to_string(inputSampleRate) + ", outputSampleRate: " + std::to_string(outputSampleRate) + ")");
         }
         double ratio = (double)outputSampleRate / inputSampleRate;
         output.resize(std::ceil(input.size() * ratio));

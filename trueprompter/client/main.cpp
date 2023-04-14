@@ -87,6 +87,7 @@ int main(int argc, char* argv[]) {
                 NTruePrompter::NCommon::NProto::TRequest request;
                 size_t samples = audioSource->Read(audioBuffer.data(), audioBuffer.size());
                 request.mutable_audio_data()->mutable_data()->insert(request.mutable_audio_data()->mutable_data()->end(), reinterpret_cast<char*>(audioBuffer.data()), reinterpret_cast<char*>(audioBuffer.data()) + samples * sizeof(float));
+                *request.mutable_audio_data()->mutable_meta() = meta;
 
                 client.send(hdl, request.SerializeAsString(), websocketpp::frame::opcode::value::binary);
             }

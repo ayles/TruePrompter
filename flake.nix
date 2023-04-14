@@ -24,6 +24,13 @@
             program = "${packages.trueprompter}/bin/trueprompter_client";
           };
           packages.dockerImage = pkgs.dockerTools.buildImage {
+            fromImage = pkgs.dockerTools.pullImage {
+              imageName = "ghcr.io/ayles/truepromptermodel";
+              imageDigest = "sha256:5e9c34d2b4f033759f09e18279a4436caed34d6e664dc20d84be61ac7cb8c375";
+              sha256 = "sha256-p5t/fIyVZNxjYwayeEp1MUc5VH+rpgJTnF5zPB0BJwQ=";
+              finalImageTag = "test";
+              finalImageName = "truepromptermodel";
+            };
             name = "trueprompter";
             tag = "latest";
             copyToRoot = pkgs.buildEnv {
