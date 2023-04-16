@@ -37,9 +37,8 @@
               name = "root";
               paths = [
                 packages.trueprompter
-                ./.
               ];
-              pathsToLink = [ "/bin" "/model" ];
+              pathsToLink = [ "/bin" ];
             };
             config =
             let
