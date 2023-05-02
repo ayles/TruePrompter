@@ -56,8 +56,8 @@ public:
     }
 
     void SetCursor(size_t cursor) {
-        auto it = std::lower_bound(Mapping_.rbegin(), Mapping_.rend(), cursor).base();
-        TokenCursor_ = it - Mapping_.end();
+        auto it = std::lower_bound(Mapping_.rbegin(), Mapping_.rend(), cursor, std::greater<size_t>()).base();
+        TokenCursor_ = it - Mapping_.begin();
     }
 
     auto GetRecognizer() const {
