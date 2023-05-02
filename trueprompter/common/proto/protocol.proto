@@ -108,6 +108,7 @@ message TRequest {
     TTextData text_data = 2;
     TAudioData audio_data = 3;
     TMatcherParams matcher_params = 4;
+    bytes user_data = 5;
 }
 
 message TResponse {
@@ -127,4 +128,6 @@ message TResponse {
         TRecognitionResult recognition_result = 1;
         TError error = 2;
     }
+
+    bytes user_data = 3;
 }

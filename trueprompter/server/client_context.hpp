@@ -74,6 +74,10 @@ public:
             }
         }
 
+        if (response.has_value()) {
+            response->set_user_data(request.user_data());
+        }
+
         return response;
     }
 
